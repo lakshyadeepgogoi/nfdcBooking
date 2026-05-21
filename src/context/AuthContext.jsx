@@ -1,8 +1,8 @@
-import { createContext, useContext, useState, useEffect, useCallback } from "react"
+import { createContext, useState, useEffect, useCallback } from "react"
 import { login as apiLogin, logout as apiLogout, getProfile } from "@/api/auth"
 import { getAccessToken, getRefreshToken, setTokens, clearTokens } from "@/api/tokenManager"
 
-const AuthContext = createContext(null)
+export const AuthContext = createContext(null)
 
 /**
  * Normalise the admin object regardless of which endpoint returned it.
@@ -122,4 +122,3 @@ export function AuthProvider({ children }) {
   )
 }
 
-export const useAuth = () => useContext(AuthContext)
