@@ -14,6 +14,7 @@ import ManualBooking from "@/pages/theater-admin/bookings/ManualBooking"
 import BlockManager from "@/pages/theater-admin/blocks/BlockManager"
 import AnalyticsDashboard from "@/pages/theater-admin/analytics/AnalyticsDashboard"
 import Notifications from "@/pages/theater-admin/Notifications"
+import Profile from "@/pages/Profile"
 
 const ComingSoon = ({ label }) => (
   <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
@@ -40,6 +41,7 @@ export default function TheaterAdminRoutes() {
         <Route path="blocks" element={<BlockManager />} />
         <Route path="analytics" element={<AnalyticsDashboard />} />
         <Route path="notifications" element={<Notifications />} />
+        <Route path="profile" element={<Profile />} />
       </Route>
     </Routes>
   )

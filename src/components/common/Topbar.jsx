@@ -104,7 +104,11 @@ export default function Topbar({ title, onMobileMenuToggle }) {
           </Avatar>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem disabled>Profile</DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link to={role === "super-admin" ? "/super/profile" : "/admin/profile"}>
+              Profile
+            </Link>
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={handleLogout}
