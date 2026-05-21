@@ -24,8 +24,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import EmptyState from "@/components/common/EmptyState"
 import { cn } from "@/lib/utils"
 
-const SKELETON_ROWS = 8
-
 export default function DataTable({
   columns,
   data,
@@ -34,6 +32,7 @@ export default function DataTable({
   onRowClick,
   emptyMessage = "No results found",
   emptyIcon,
+  skeletonRows = 5,
 }) {
   const table = useReactTable({
     data: data ?? [],
@@ -74,7 +73,7 @@ export default function DataTable({
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              Array.from({ length: SKELETON_ROWS }).map((_, i) => (
+              Array.from({ length: skeletonRows }).map((_, i) => (
                 <TableRow key={i}>
                   {columns.map((_, ci) => (
                     <TableCell key={ci}>

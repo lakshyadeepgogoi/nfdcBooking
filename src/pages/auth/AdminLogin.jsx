@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useEffect, useState } from "react"
+import { useNavigate, Navigate } from "react-router-dom"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Form } from "@/components/ui/form"
 import FormInput from "@/components/forms/FormInput"
+import LoadingSpinner from "@/components/common/LoadingSpinner"
 import { useAuth } from "@/hooks/useAuth"
 
 const schema = z.object({
@@ -16,8 +17,10 @@ const schema = z.object({
 })
 
 export default function AdminLogin() {
+  useEffect(() => { document.title = "NFDC Admin — Login" }, [])
+
   const navigate = useNavigate()
-  const { login } = useAuth()
+  const { login, isAuthenticated, role, isLoading } = useAuth()
   const [error, setError] = useState("")
   const [isPending, setIsPending] = useState(false)
 
@@ -25,6 +28,12 @@ export default function AdminLogin() {
     resolver: zodResolver(schema),
     defaultValues: { email: "", password: "" },
   })
+
+  if (isLoading) return <LoadingSpinner fullPage />
+  if (isAuthenticated) {
+    if (role === "theater-admin") return <Navigate to="/admin/dashboard" replace />
+    if (role === "super-admin") return <Navigate to="/super/dashboard" replace />
+  }
 
   const onSubmit = async (values) => {
     setError("")
@@ -70,9 +79,7 @@ export default function AdminLogin() {
                 type="password"
               />
 
-              {error && (
-                <p className="text-sm text-red-600">{error}</p>
-              )}
+              {error && <p className="text-sm text-red-600">{error}</p>}
 
               <Button
                 type="submit"

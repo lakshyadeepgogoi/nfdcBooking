@@ -52,7 +52,7 @@ export default function TheaterAdminLayout() {
           title="NFDC Admin"
           onMobileMenuToggle={() => setMobileOpen(true)}
         />
-        <main className="flex-1 p-6 bg-gray-50 overflow-auto">
+        <main className="flex-1 p-6 bg-gray-50 overflow-auto min-w-0 overflow-x-hidden">
           <ErrorBoundary>
             <Outlet />
           </ErrorBoundary>

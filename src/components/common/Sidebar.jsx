@@ -24,7 +24,7 @@ function getInitials(name) {
     .slice(0, 2)
 }
 
-function SidebarContent({ navItems }) {
+function SidebarContent({ navItems, onClose }) {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const { user, role, logout } = useAuth()
@@ -49,6 +49,7 @@ function SidebarContent({ navItems }) {
             <Link
               key={item.path}
               to={item.path}
+              onClick={onClose}
               className={cn(
                 "flex items-center gap-3 py-2 px-3 rounded-lg text-white/80 hover:bg-white/10 transition-colors text-sm",
                 isActive && "bg-white/15 text-white font-medium"
@@ -100,13 +101,13 @@ export default function Sidebar({ navItems, isMobileOpen, onMobileClose }) {
     <>
       {/* Desktop sidebar */}
       <aside className="hidden lg:flex flex-col w-60 shrink-0 bg-nfdc-primary fixed left-0 top-0 h-full z-30">
-        <SidebarContent navItems={navItems} />
+        <SidebarContent navItems={navItems} onClose={undefined} />
       </aside>
 
       {/* Mobile sidebar via Sheet */}
       <Sheet open={isMobileOpen} onOpenChange={onMobileClose}>
         <SheetContent side="left" className="w-[240px] p-0 bg-nfdc-primary border-r-0">
-          <SidebarContent navItems={navItems} />
+          <SidebarContent navItems={navItems} onClose={onMobileClose} />
         </SheetContent>
       </Sheet>
     </>

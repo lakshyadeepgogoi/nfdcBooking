@@ -1,6 +1,7 @@
 import { useEffect } from "react"
 import { Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
+import { pick } from "@/utils/pick"
 import {
   AreaChart,
   Area,
@@ -184,7 +185,7 @@ export default function Dashboard() {
                       <p className="font-mono text-xs text-muted-foreground">
                         #{booking.id ?? booking._id}
                       </p>
-                      <p className="text-sm font-medium">{booking.customerName ?? booking.user?.name}</p>
+                      <p className="text-sm font-medium">{pick(booking.customerName, booking.user?.name, booking.user)}</p>
                     </div>
                     <StatusBadge status={booking.status} />
                   </div>
