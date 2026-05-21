@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react"
-import { pick } from "@/utils/pick"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -37,6 +36,8 @@ const transformAdmin = (admin) => ({
   statusHistory: admin.lifecycle?.statusHistory || admin.statusHistory || [],
   theaterId: admin.relationships?.theaterId || admin.theaterId,
   role: admin.profile?.role || admin.role,
+  lastLoginAt: admin.profile?.lastLoginAt,
+  createdBy: admin.createdBy,
 })
 
 const createSchema = z.object({
@@ -75,7 +76,14 @@ export default function AdminList() {
     queryFn: () => listAllTheaters().then(r => parseList(r.data.data)),
   })
   const theaters = theatersRaw ?? []
-  const theaterOptions = theaters.map(t => ({ value: t.id ?? t._id ?? t.theaterId, label: t.name }))
+  const theaterOptions = theaters.map(t => ({ value: t.theaterId ?? t.id ?? t._id, label: t.name }))
+  const theaterNameMap = new Map()
+  theaters.forEach(t => {
+    const name = t.name
+    if (t.id) theaterNameMap.set(t.id, name)
+    if (t._id) theaterNameMap.set(t._id, name)
+    if (t.theaterId) theaterNameMap.set(t.theaterId, name)
+  })
 
   const { data: adminsRaw, isLoading } = useQuery({
     queryKey: ["admins", theaterFilter],
@@ -142,9 +150,22 @@ export default function AdminList() {
     {
       id: "theater",
       header: "Theater",
-      cell: ({ row }) => pick(row.original.theater?.name, row.original.theaterName, row.original.theater),
+      cell: ({ row }) => {
+        const tid = row.original.theaterId
+        return tid ? (theaterNameMap.get(tid) || tid) : "—"
+      },
     },
     { accessorKey: "status", header: "Status", cell: ({ getValue, row }) => <button onClick={() => setStatusHistoryTarget(row.original)} className="cursor-pointer hover:opacity-80"><StatusBadge status={getValue()} /></button> },
+    {
+      id: "lastLogin",
+      header: "Last Login",
+      cell: ({ row }) => row.original.lastLoginAt ? formatDateTime(row.original.lastLoginAt) : <span className="text-muted-foreground">Never</span>,
+    },
+    {
+      id: "createdBy",
+      header: "Created By",
+      cell: ({ row }) => adminNameMap.get(row.original.createdBy) || "System",
+    },
     {
       accessorKey: "createdAt",
       header: "Created At",

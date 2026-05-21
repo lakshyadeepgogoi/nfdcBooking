@@ -1,42 +1,36 @@
 import axios from "axios"
 import { toast } from "sonner"
+import { getAccessToken, clearTokens, refreshAccessToken } from "./tokenManager"
 
 const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL })
 
+// Attach current access token to every request
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("accessToken")
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
+  const token = getAccessToken()
+  if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
 
+// Handle 401 — try to refresh once, then give up
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalConfig = error.config
+    const config = error.config
 
     if (!error.response) {
-      if (!originalConfig._silent) {
-        toast.error("Network error. Check your connection.")
-      }
+      if (!config._silent) toast.error("Network error. Check your connection.")
       return Promise.reject(error)
     }
 
-    if (error.response.status === 401 && !originalConfig._retry) {
-      originalConfig._retry = true
+    if (error.response.status === 401 && !config._retry) {
+      config._retry = true
       try {
-        const refreshToken = localStorage.getItem("refreshToken")
-        const { data } = await axios.post(
-          `${import.meta.env.VITE_API_BASE_URL}admin/auth/refresh`,
-          { refreshToken }
-        )
-        const newToken = data.data.tokens?.accessToken ?? data.data.accessToken
-        localStorage.setItem("accessToken", newToken)
-        originalConfig.headers.Authorization = `Bearer ${newToken}`
-        return api(originalConfig)
+        const newToken = await refreshAccessToken()
+        config.headers.Authorization = `Bearer ${newToken}`
+        return api(config)
       } catch {
-        localStorage.clear()
+        // Refresh token is also expired — force logout
+        clearTokens()
         window.location.href = "/login"
         return Promise.reject(error)
       }
