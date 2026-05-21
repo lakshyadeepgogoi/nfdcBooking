@@ -2,7 +2,7 @@ import { useEffect } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Users } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import PageHeader from "@/components/common/PageHeader"
@@ -12,7 +12,6 @@ import EmptyState from "@/components/common/EmptyState"
 import { getTheaterDetail, listAdmins, getSuperAudiAnalytics } from "@/api/superAdmin"
 import { formatDateTime } from "@/utils/formatDate"
 import { parseList } from "@/utils/parseList"
-import { Users } from "lucide-react"
 
 function InfoRow({ label, value }) {
   return (
@@ -24,12 +23,6 @@ function InfoRow({ label, value }) {
 }
 
 export default function TheaterDetail() {
-  useEffect(() => {
-    document.title = theater?.name
-      ? `NFDC Admin — ${theater.name}`
-      : "NFDC Admin — Theater Detail"
-  }, [theater?.name])
-
   const { theaterId } = useParams()
   const navigate = useNavigate()
 
@@ -51,28 +44,55 @@ export default function TheaterDetail() {
     enabled: !!theaterId,
   })
 
+  // Derive all computed values BEFORE any hooks that depend on them
   const theater = theaterRaw?.theater ?? theaterRaw
-  const admins = adminsRaw ?? []
-  const audiData = Array.isArray(audiRaw) ? audiRaw
+  const details  = theater?.details ?? {}
+  const admins   = adminsRaw ?? []
+  const audiData = Array.isArray(audiRaw)
+    ? audiRaw
     : Object.values(audiRaw ?? {}).find(Array.isArray) ?? []
 
+  useEffect(() => {
+    document.title = theater?.name
+      ? `NFDC Admin — ${theater.name}`
+      : "NFDC Admin — Theater Detail"
+  }, [theater?.name])
+
   const adminColumns = [
-    { accessorKey: "name", header: "Name", cell: ({ getValue }) => <span className="font-medium">{getValue()}</span> },
-    { accessorKey: "email", header: "Email" },
-    { accessorKey: "status", header: "Status", cell: ({ getValue }) => <StatusBadge status={getValue()} /> },
+    {
+      accessorKey: "name",
+      header: "Name",
+      cell: ({ getValue }) => <span className="font-medium">{getValue()}</span>,
+    },
+    {
+      accessorKey: "email",
+      header: "Email",
+    },
+    {
+      id: "role",
+      header: "Role",
+      cell: ({ row }) => (
+        <span className="capitalize text-sm">
+          {row.original.profile?.role?.replace(/_/g, " ") ?? "—"}
+        </span>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      cell: ({ row }) => <StatusBadge status={row.original.lifecycle?.status} />,
+    },
     {
       accessorKey: "createdAt",
-      header: "Created At",
+      header: "Created",
       cell: ({ getValue }) => getValue() ? formatDateTime(getValue()) : "—",
     },
   ]
 
-  const details = theater?.details ?? theater
-
   return (
     <div className="space-y-6">
       <PageHeader
-        title={theater?.name ?? "Theater"}
+        title={theater?.name ?? "Theater Detail"}
         action={{ label: "Back", icon: ArrowLeft, onClick: () => navigate("/super/theaters") }}
       />
 
@@ -82,14 +102,16 @@ export default function TheaterDetail() {
         <CardContent>
           {tLoading ? <Skeleton className="h-24 w-full" /> : (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <InfoRow label="Name" value={theater?.name} />
-              <InfoRow label="City" value={details?.city} />
-              <InfoRow label="State" value={details?.state} />
-              <InfoRow label="Phone" value={details?.phone} />
-              <InfoRow label="Email" value={details?.email} />
+              <InfoRow label="Name"    value={theater?.name} />
+              <InfoRow label="City"    value={details.city} />
+              <InfoRow label="State"   value={details.state} />
+              <InfoRow label="Address" value={details.address} />
+              <InfoRow label="Phone"   value={details.phone} />
+              <InfoRow label="Email"   value={details.email} />
+              {details.pincode && <InfoRow label="Pincode" value={details.pincode} />}
               <div className="space-y-0.5">
                 <p className="text-xs text-muted-foreground">Status</p>
-                <StatusBadge status={theater?.status ?? "active"} />
+                <StatusBadge status={theater?.lifecycle?.status} />
               </div>
             </div>
           )}
@@ -101,7 +123,11 @@ export default function TheaterDetail() {
         <CardHeader><CardTitle className="text-base">Assigned Admins</CardTitle></CardHeader>
         <CardContent>
           {admins.length === 0 ? (
-            <EmptyState icon={Users} title="No admins assigned" message="No admins are assigned to this theater." />
+            <EmptyState
+              icon={Users}
+              title="No admins assigned"
+              message="No admins are assigned to this theater."
+            />
           ) : (
             <DataTable columns={adminColumns} data={admins} />
           )}
@@ -112,7 +138,9 @@ export default function TheaterDetail() {
       <Card>
         <CardHeader><CardTitle className="text-base">Audi Performance</CardTitle></CardHeader>
         <CardContent>
-          {audiLoading ? <Skeleton className="h-[250px] w-full" /> : (
+          {audiLoading ? <Skeleton className="h-[250px] w-full" /> : audiData.length === 0 ? (
+            <EmptyState title="No audi data" message="No analytics available for this theater." />
+          ) : (
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={audiData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />

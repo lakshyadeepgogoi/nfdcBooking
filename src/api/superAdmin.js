@@ -12,8 +12,8 @@ export const getTheaterComparison = () =>
 export const getSuperAudiAnalytics = (params) =>
   api.get("/super/analytics/audis", { params })
 
-export const listAllTheaters = () =>
-  api.get("/theaters")
+export const listAllTheaters = (params) =>
+  api.get("/theaters", { params })
 
 export const getTheaterDetail = (id) =>
   api.get(`/theaters/${id}`)
