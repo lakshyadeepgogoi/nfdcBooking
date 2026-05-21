@@ -132,7 +132,7 @@ export default function BlockManager() {
       />
 
       <Select value={selectedAudiId} onValueChange={setSelectedAudiId}>
-        <SelectTrigger className="w-64">
+        <SelectTrigger className="w-full sm:w-64">
           <SelectValue placeholder="Select an audi" />
         </SelectTrigger>
         <SelectContent>

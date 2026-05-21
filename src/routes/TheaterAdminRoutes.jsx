@@ -4,6 +4,7 @@ import Dashboard from "@/pages/theater-admin/Dashboard"
 import TheaterSettings from "@/pages/theater-admin/TheaterSettings"
 import AudiList from "@/pages/theater-admin/audi/AudiList"
 import AudiCreate from "@/pages/theater-admin/audi/AudiCreate"
+import AudiDetail from "@/pages/theater-admin/audi/AudiDetail"
 import SlotList from "@/pages/theater-admin/slots/SlotList"
 import ServiceList from "@/pages/theater-admin/services/ServiceList"
 import PriceConfigList from "@/pages/theater-admin/pricing/PriceConfigList"
@@ -29,7 +30,7 @@ export default function TheaterAdminRoutes() {
         <Route path="theater-settings" element={<TheaterSettings />} />
         <Route path="audis" element={<AudiList />} />
         <Route path="audis/create" element={<AudiCreate />} />
-        <Route path="audis/:audiId" element={<div className="p-6">Audi Detail — coming Day 4</div>} />
+        <Route path="audis/:audiId" element={<AudiDetail />} />
         <Route path="slots" element={<SlotList />} />
         <Route path="services" element={<ServiceList />} />
         <Route path="pricing" element={<PriceConfigList />} />

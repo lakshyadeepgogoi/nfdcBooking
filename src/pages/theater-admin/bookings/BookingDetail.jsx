@@ -6,6 +6,8 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { ArrowLeft, Copy, Loader2 } from "lucide-react"
+import RoleGuard from "@/components/common/RoleGuard"
+import { PERMISSIONS } from "@/auth/permissions"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -39,13 +41,6 @@ function InfoRow({ label, value }) {
 }
 
 export default function BookingDetail() {
-  useEffect(() => {
-    const shortId = id ? String(id).slice(-8) : null
-    document.title = shortId
-      ? `NFDC Admin — Booking #${shortId}`
-      : "NFDC Admin — Booking Detail"
-  }, [id])
-
   const { bookingId } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -63,6 +58,15 @@ export default function BookingDetail() {
   })
 
   const booking = raw?.booking ?? raw
+  const id = booking?.id ?? booking?.bookingId ?? bookingId
+  const status = booking?.status
+
+  useEffect(() => {
+    const shortId = id ? String(id).slice(-8) : null
+    document.title = shortId
+      ? `NFDC Admin — Booking #${shortId}`
+      : "NFDC Admin — Booking Detail"
+  }, [id])
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["booking", bookingId] })
 
@@ -134,13 +138,10 @@ export default function BookingDetail() {
     onError: () => toast.error("Something went wrong. Please try again."),
   })
 
-  const id = booking?.id ?? booking?.bookingId ?? bookingId
-  const status = booking?.status
-
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="flex-1">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="flex-1 min-w-0">
           <PageHeader
             title={`Booking #${id ? String(id).slice(-8) : "..."}`}
             action={{ label: "Back to Bookings", icon: ArrowLeft, onClick: () => navigate("/admin/bookings") }}
@@ -150,6 +151,7 @@ export default function BookingDetail() {
           <Button
             variant="ghost"
             size="sm"
+            className="shrink-0"
             onClick={() => { navigator.clipboard.writeText(id); toast.success("Booking ID copied") }}
           >
             <Copy className="mr-1.5 h-3.5 w-3.5" />
@@ -277,19 +279,21 @@ export default function BookingDetail() {
             </CardContent>
           </Card>
 
-          {/* Extra Actions */}
-          <Card>
-            <CardHeader><CardTitle className="text-base">Additional Actions</CardTitle></CardHeader>
-            <CardContent className="flex flex-col gap-2">
-              <Button variant="outline" onClick={() => setOvertimeOpen(true)}>Add Overtime Charge</Button>
-              <Button variant="outline" onClick={() => setDeadlineOpen(true)}>Extend Payment Deadline</Button>
-              <Button
-                variant="outline"
-                className="border-amber-300 text-amber-700 hover:bg-amber-50"
-                onClick={() => setRefundOpen(true)}
-              >Refund Deposit</Button>
-            </CardContent>
-          </Card>
+          {/* Extra Actions — theater admins only */}
+          <RoleGuard permissions={PERMISSIONS.MANAGE_OWN_BOOKINGS}>
+            <Card>
+              <CardHeader><CardTitle className="text-base">Additional Actions</CardTitle></CardHeader>
+              <CardContent className="flex flex-col gap-2">
+                <Button variant="outline" onClick={() => setOvertimeOpen(true)}>Add Overtime Charge</Button>
+                <Button variant="outline" onClick={() => setDeadlineOpen(true)}>Extend Payment Deadline</Button>
+                <Button
+                  variant="outline"
+                  className="border-amber-300 text-amber-700 hover:bg-amber-50"
+                  onClick={() => setRefundOpen(true)}
+                >Refund Deposit</Button>
+              </CardContent>
+            </Card>
+          </RoleGuard>
         </div>
       </div>
 

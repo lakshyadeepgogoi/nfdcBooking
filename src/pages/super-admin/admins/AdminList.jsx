@@ -18,6 +18,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog"
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Form } from "@/components/ui/form"
 import PageHeader from "@/components/common/PageHeader"
 import DataTable from "@/components/common/DataTable"
@@ -29,6 +30,14 @@ import {
 } from "@/api/superAdmin"
 import { parseList } from "@/utils/parseList"
 import { formatDateTime } from "@/utils/formatDate"
+
+const transformAdmin = (admin) => ({
+  ...admin,
+  status: admin.lifecycle?.status || admin.status,
+  statusHistory: admin.lifecycle?.statusHistory || admin.statusHistory || [],
+  theaterId: admin.relationships?.theaterId || admin.theaterId,
+  role: admin.profile?.role || admin.role,
+})
 
 const createSchema = z.object({
   name: z.string().min(2, "Min 2 characters"),
@@ -59,6 +68,7 @@ export default function AdminList() {
   const [editingAdmin, setEditingAdmin] = useState(null)
   const [reassignTarget, setReassignTarget] = useState(null)
   const [deactivateTarget, setDeactivateTarget] = useState(null)
+  const [statusHistoryTarget, setStatusHistoryTarget] = useState(null)
 
   const { data: theatersRaw } = useQuery({
     queryKey: ["theaters"],
@@ -69,9 +79,18 @@ export default function AdminList() {
 
   const { data: adminsRaw, isLoading } = useQuery({
     queryKey: ["admins", theaterFilter],
-    queryFn: () => listAdmins(theaterFilter || undefined).then(r => parseList(r.data.data)),
+    queryFn: () => listAdmins(theaterFilter || undefined).then(r => parseList(r.data.data).map(transformAdmin)),
   })
   const admins = adminsRaw ?? []
+
+  const { data: allAdminsRaw } = useQuery({
+    queryKey: ["admins", "all"],
+    queryFn: () => listAdmins().then(r => parseList(r.data.data)),
+  })
+  const allAdmins = allAdminsRaw ?? []
+  const adminNameMap = new Map(
+    allAdmins.map(a => [(a.adminId ?? a.id ?? a._id), a.name])
+  )
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["admins"] })
 
@@ -82,7 +101,7 @@ export default function AdminList() {
   })
 
   const editMutation = useMutation({
-    mutationFn: (data) => updateAdmin(editingAdmin.id ?? editingAdmin._id, data),
+    mutationFn: (data) => updateAdmin(editingAdmin.adminId ?? editingAdmin.id ?? editingAdmin._id, data),
     onSuccess: () => { toast.success("Admin updated"); invalidate(); setEditingAdmin(null) },
     onError: () => toast.error("Something went wrong. Please try again."),
   })
@@ -125,7 +144,7 @@ export default function AdminList() {
       header: "Theater",
       cell: ({ row }) => pick(row.original.theater?.name, row.original.theaterName, row.original.theater),
     },
-    { accessorKey: "status", header: "Status", cell: ({ getValue }) => <StatusBadge status={getValue()} /> },
+    { accessorKey: "status", header: "Status", cell: ({ getValue, row }) => <button onClick={() => setStatusHistoryTarget(row.original)} className="cursor-pointer hover:opacity-80"><StatusBadge status={getValue()} /></button> },
     {
       accessorKey: "createdAt",
       header: "Created At",
@@ -136,7 +155,7 @@ export default function AdminList() {
       header: "",
       cell: ({ row }) => {
         const admin = row.original
-        const id = admin.id ?? admin._id ?? admin.adminId
+        const id = admin.adminId ?? admin.id ?? admin._id
         return (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -152,12 +171,14 @@ export default function AdminList() {
                 <ArrowLeftRight className="mr-2 h-4 w-4" />Reassign Theater
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => setDeactivateTarget({ id, name: admin.name })}
-                className="text-destructive focus:text-destructive"
-              >
-                <UserX className="mr-2 h-4 w-4" />Deactivate
-              </DropdownMenuItem>
+              {admin.status !== "inactive" && (
+                <DropdownMenuItem
+                  onClick={() => setDeactivateTarget({ id, name: admin.name })}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <UserX className="mr-2 h-4 w-4" />Deactivate
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )
@@ -274,6 +295,79 @@ export default function AdminList() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Status History Sheet */}
+      <Sheet open={!!statusHistoryTarget} onOpenChange={(o) => !o && setStatusHistoryTarget(null)}>
+        <SheetContent className="w-full sm:w-96 overflow-y-auto">
+          <SheetHeader className="mb-6">
+            <SheetTitle className="text-lg">Status History</SheetTitle>
+            <p className="text-sm text-muted-foreground mt-1">{statusHistoryTarget?.name}</p>
+          </SheetHeader>
+
+          <div className="space-y-1">
+            {statusHistoryTarget?.statusHistory && statusHistoryTarget.statusHistory.length > 0 ? (
+              [...statusHistoryTarget.statusHistory].reverse().map((entry, idx) => {
+                const isFirst = idx === 0
+                const isLast = idx === statusHistoryTarget.statusHistory.length - 1
+                return (
+                  <div key={entry._id || idx} className="relative pl-6 pb-6">
+                    {/* Timeline line */}
+                    {!isLast && <div className="absolute left-2 top-6 w-0.5 h-8 bg-border" />}
+
+                    {/* Timeline dot */}
+                    <div className={`absolute left-0 top-1.5 w-5 h-5 rounded-full border-2 ${
+                      entry.status === "active"
+                        ? "bg-green-100 border-green-500"
+                        : "bg-red-100 border-red-500"
+                    }`} />
+
+                    {/* Content */}
+                    <div className="bg-muted/40 rounded-lg p-4 hover:bg-muted/60 transition-colors">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <StatusBadge status={entry.status} />
+                        <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+                          {new Date(entry.timestamp).toLocaleDateString()}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-muted-foreground mb-2">
+                        {new Date(entry.timestamp).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </p>
+
+                      <div className="pt-2 border-t border-border/50">
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-medium">Changed by:</span>
+                          <br />
+                          <span className="break-all">
+                            {entry.changedBy === "seed"
+                              ? "System Seed"
+                              : entry.changedBy == null
+                                ? "System"
+                                : adminNameMap.get(entry.changedBy) || entry.changedBy}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+
+                    {isFirst && (
+                      <div className="mt-3 text-xs text-muted-foreground italic">
+                        Current status
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            ) : (
+              <div className="flex items-center justify-center py-12 text-center">
+                <p className="text-sm text-muted-foreground">No status history available</p>
+              </div>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }

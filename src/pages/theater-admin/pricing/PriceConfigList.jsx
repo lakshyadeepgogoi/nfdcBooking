@@ -380,10 +380,13 @@ export default function PriceConfigList() {
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="hourly">Hourly Rates</TabsTrigger>
-          <TabsTrigger value="flat">Flat Services</TabsTrigger>
-          <TabsTrigger value="cancellation">Cancellation Policy</TabsTrigger>
+        <TabsList className="w-full sm:w-auto">
+          <TabsTrigger value="hourly" className="flex-1 sm:flex-none">Hourly Rates</TabsTrigger>
+          <TabsTrigger value="flat" className="flex-1 sm:flex-none">Flat Services</TabsTrigger>
+          <TabsTrigger value="cancellation" className="flex-1 sm:flex-none">
+            <span className="hidden sm:inline">Cancellation Policy</span>
+            <span className="sm:hidden">Cancellation</span>
+          </TabsTrigger>
         </TabsList>
 
         {["hourly", "flat", "cancellation"].map((tab) => (

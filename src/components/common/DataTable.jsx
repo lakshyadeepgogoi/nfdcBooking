@@ -111,12 +111,12 @@ export default function DataTable({
       </div>
 
       {pagination && !isLoading && rows.length > 0 && (
-        <div className="flex items-center justify-between px-1">
+        <div className="flex flex-wrap items-center justify-between gap-y-2 px-1">
           <p className="text-sm text-muted-foreground">
             Showing {startRow}–{endRow} of {pagination.total} results
           </p>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-2">
               <span className="text-sm text-muted-foreground">Rows per page</span>
               <Select
                 value={String(pagination.pageSize)}
@@ -143,6 +143,7 @@ export default function DataTable({
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
+              <span className="text-sm text-muted-foreground px-1">{pagination.page}</span>
               <Button
                 variant="outline"
                 size="sm"

@@ -101,10 +101,16 @@ export default function PlatformAnalytics() {
       <PageHeader title="Platform Analytics" />
 
       <Tabs defaultValue="revenue">
-        <TabsList>
-          <TabsTrigger value="revenue">Revenue</TabsTrigger>
-          <TabsTrigger value="comparison">Theater Comparison</TabsTrigger>
-          <TabsTrigger value="audi">Audi Analytics</TabsTrigger>
+        <TabsList className="w-full sm:w-auto">
+          <TabsTrigger value="revenue" className="flex-1 sm:flex-none">Revenue</TabsTrigger>
+          <TabsTrigger value="comparison" className="flex-1 sm:flex-none">
+            <span className="hidden sm:inline">Theater Comparison</span>
+            <span className="sm:hidden">Theaters</span>
+          </TabsTrigger>
+          <TabsTrigger value="audi" className="flex-1 sm:flex-none">
+            <span className="hidden sm:inline">Audi Analytics</span>
+            <span className="sm:hidden">Audis</span>
+          </TabsTrigger>
         </TabsList>
 
         {/* Revenue Tab */}
@@ -165,7 +171,7 @@ export default function PlatformAnalytics() {
         <TabsContent value="comparison" className="mt-4">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <CardTitle>Theater Comparison</CardTitle>
                 <Button size="sm" variant="outline" onClick={() => downloadCSV("theater-comparison.csv", ["Theater", "Bookings", "Revenue"], compData.map(t => [t.theaterName ?? t.name, t.bookings, t.revenue]))}>
                   <Download className="mr-1.5 h-3.5 w-3.5" />Export CSV

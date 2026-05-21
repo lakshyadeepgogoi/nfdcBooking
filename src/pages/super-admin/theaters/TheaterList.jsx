@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Eye, Power, MoreHorizontal } from "lucide-react"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { z } from "zod"
+import { Eye, Power, MoreHorizontal, Plus, Loader2 } from "lucide-react"
+import RoleGuard from "@/components/common/RoleGuard"
+import { PERMISSIONS } from "@/auth/permissions"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
@@ -11,11 +16,125 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog"
+import { Form } from "@/components/ui/form"
 import PageHeader from "@/components/common/PageHeader"
 import DataTable from "@/components/common/DataTable"
 import StatusBadge from "@/components/common/StatusBadge"
-import { listAllTheaters, updateTheaterStatus } from "@/api/superAdmin"
+import FormInput from "@/components/forms/FormInput"
+import { listAllTheaters, createTheater, updateTheaterStatus } from "@/api/superAdmin"
 import { parseList } from "@/utils/parseList"
+
+const createTheaterSchema = z.object({
+  name: z.string().min(2, "Min 2 characters").max(200, "Max 200 characters"),
+  address: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  phone: z.string().optional(),
+  email: z.union([z.string().email("Enter a valid email"), z.literal("")]).optional(),
+})
+
+function CreateTheaterDialog({ open, onOpenChange }) {
+  const queryClient = useQueryClient()
+
+  const form = useForm({
+    resolver: zodResolver(createTheaterSchema),
+    defaultValues: { name: "", address: "", city: "", state: "", phone: "", email: "" },
+  })
+
+  useEffect(() => {
+    if (open) form.reset({ name: "", address: "", city: "", state: "", phone: "", email: "" })
+  }, [open, form])
+
+  const mutation = useMutation({
+    mutationFn: (values) => {
+      const { name, ...rest } = values
+      const details = Object.fromEntries(
+        Object.entries(rest).filter(([, v]) => v !== "")
+      )
+      return createTheater({ name, ...(Object.keys(details).length ? { details } : {}) })
+    },
+    onSuccess: () => {
+      toast.success("Theater created successfully")
+      queryClient.invalidateQueries({ queryKey: ["theaters"] })
+      onOpenChange(false)
+    },
+    onError: (err) => {
+      const msg = err?.response?.data?.message ?? "Something went wrong. Please try again."
+      toast.error(msg)
+    },
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg" aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>Create Theater</DialogTitle>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))} className="space-y-4">
+            <FormInput
+              control={form.control}
+              name="name"
+              label="Theater Name"
+              placeholder="NFDC Cinema, Mumbai"
+            />
+            <FormInput
+              control={form.control}
+              name="address"
+              label="Address (optional)"
+              placeholder="123 Main Street"
+            />
+            <div className="grid grid-cols-2 gap-4">
+              <FormInput
+                control={form.control}
+                name="city"
+                label="City (optional)"
+                placeholder="Mumbai"
+              />
+              <FormInput
+                control={form.control}
+                name="state"
+                label="State (optional)"
+                placeholder="Maharashtra"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <FormInput
+                control={form.control}
+                name="phone"
+                label="Phone (optional)"
+                placeholder="+91 98765 43210"
+              />
+              <FormInput
+                control={form.control}
+                name="email"
+                label="Email (optional)"
+                type="email"
+                placeholder="contact@theater.in"
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={mutation.isPending}
+                className="bg-nfdc-primary hover:bg-nfdc-primary/90"
+              >
+                {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Create Theater
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 export default function TheaterList() {
   useEffect(() => { document.title = "NFDC Admin — Theaters" }, [])
@@ -23,6 +142,7 @@ export default function TheaterList() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [statusTarget, setStatusTarget] = useState(null)
+  const [createOpen, setCreateOpen] = useState(false)
 
   const { data: raw, isLoading } = useQuery({
     queryKey: ["theaters"],
@@ -53,6 +173,14 @@ export default function TheaterList() {
       cell: ({ row }) => {
         const d = row.original.details ?? row.original
         return [d.city, d.state].filter(Boolean).join(", ") || row.original.address || "—"
+      },
+    },
+    {
+      id: "contact",
+      header: "Contact",
+      cell: ({ row }) => {
+        const d = row.original.details ?? row.original
+        return d.phone || d.email || "—"
       },
     },
     {
@@ -96,8 +224,26 @@ export default function TheaterList() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Theaters" />
-      <DataTable columns={columns} data={theaters} isLoading={isLoading} emptyMessage="No theaters found" />
+      <PageHeader title="Theaters">
+        <RoleGuard permissions={PERMISSIONS.CREATE_THEATER}>
+          <Button
+            className="bg-nfdc-primary hover:bg-nfdc-primary/90"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add Theater
+          </Button>
+        </RoleGuard>
+      </PageHeader>
+
+      <DataTable
+        columns={columns}
+        data={theaters}
+        isLoading={isLoading}
+        emptyMessage="No theaters found"
+      />
+
+      <CreateTheaterDialog open={createOpen} onOpenChange={setCreateOpen} />
 
       <AlertDialog open={!!statusTarget} onOpenChange={(o) => !o && setStatusTarget(null)}>
         <AlertDialogContent>

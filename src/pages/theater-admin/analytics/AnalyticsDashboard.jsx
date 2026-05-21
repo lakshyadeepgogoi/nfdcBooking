@@ -131,12 +131,12 @@ export default function AnalyticsDashboard() {
       {/* Revenue Chart */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <CardTitle>Revenue</CardTitle>
               <CardDescription>{revenueMode === "daily" ? "Daily" : "Monthly"} breakdown</CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 size="sm"
                 variant={revenueMode === "daily" ? "default" : "outline"}
@@ -149,11 +149,12 @@ export default function AnalyticsDashboard() {
               >Monthly</Button>
               <Button size="sm" variant="outline" onClick={() => downloadCSV(`revenue-${revenueMode}.csv`, ["Date", "Revenue"], revenueData.map(r => [r.date ?? r.month, r.revenue]))}>
                 <Download className="mr-1.5 h-3.5 w-3.5" />
-                Export CSV
+                <span className="hidden sm:inline">Export CSV</span>
+                <span className="sm:hidden">CSV</span>
               </Button>
             </div>
           </div>
-          <div className="flex items-center gap-2 mt-3 flex-wrap">
+          <div className="flex flex-wrap items-center gap-2 mt-3">
             <DatePicker label="From" value={revenueFrom} onChange={setRevenueFrom} />
             <DatePicker label="To" value={revenueTo} onChange={setRevenueTo} />
             <Button size="sm" className="bg-nfdc-primary hover:bg-nfdc-primary/90"

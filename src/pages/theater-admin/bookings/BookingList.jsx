@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { Plus, Eye, ChevronLeft, ChevronRight } from "lucide-react"
 import { pick } from "@/utils/pick"
+import RoleGuard from "@/components/common/RoleGuard"
+import { PERMISSIONS } from "@/auth/permissions"
 import { format } from "date-fns"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -145,10 +147,17 @@ export default function BookingList() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Bookings"
-        action={{ label: "Manual Booking", icon: Plus, onClick: () => navigate("/admin/bookings/manual") }}
-      />
+      <PageHeader title="Bookings">
+        <RoleGuard permissions={PERMISSIONS.CREATE_MANUAL_BOOKING}>
+          <Button
+            className="bg-nfdc-primary hover:bg-nfdc-primary/90"
+            onClick={() => navigate("/admin/bookings/manual")}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Manual Booking
+          </Button>
+        </RoleGuard>
+      </PageHeader>
 
       <Card>
         <CardContent className="p-4">

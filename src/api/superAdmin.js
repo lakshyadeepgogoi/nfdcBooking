@@ -18,6 +18,9 @@ export const listAllTheaters = () =>
 export const getTheaterDetail = (id) =>
   api.get(`/theaters/${id}`)
 
+export const createTheater = (data) =>
+  api.post("/super/theaters", data)
+
 export const updateTheaterStatus = (id, status) =>
   api.patch(`/super/theaters/${id}/status`, { status })
 

@@ -240,9 +240,9 @@ export default function ServiceList() {
     <div className="space-y-6">
       <PageHeader title="Services &amp; Sections" />
 
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <Select value={selectedAudiId} onValueChange={setSelectedAudiId}>
-          <SelectTrigger className="w-64">
+          <SelectTrigger className="w-full sm:w-64">
             <SelectValue placeholder="Select an audi" />
           </SelectTrigger>
           <SelectContent>
