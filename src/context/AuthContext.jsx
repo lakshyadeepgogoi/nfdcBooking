@@ -1,8 +1,8 @@
-import { createContext, useState, useEffect, useCallback } from "react"
+import { createContext, useContext, useState, useEffect, useCallback } from "react"
 import { login as apiLogin, logout as apiLogout, getProfile } from "@/api/auth"
 import { getAccessToken, getRefreshToken, setTokens, clearTokens } from "@/api/tokenManager"
 
-export const AuthContext = createContext(null)
+const AuthContext = createContext(null)
 
 /**
  * Normalise the admin object regardless of which endpoint returned it.
@@ -38,18 +38,6 @@ export function AuthProvider({ children }) {
     setRole(null)
     setIsAuthenticated(false)
   }, [])
-
-  // ── Restore session on page load / refresh ────────────────────────────────────
-  // Only the access token survives a page refresh (it lives in localStorage).
-  // The refresh token is memory-only, so it is gone after a hard refresh.
-  //
-  // Scenarios:
-  //   • Access token valid  → getProfile succeeds → session restored ✓
-  //   • Access token expired, refresh token in memory (same session, no refresh)
-  //                         → interceptor refreshes silently → session restored ✓
-  //   • Access token expired, no refresh token (after hard refresh or token expiry)
-  //                         → 401 cannot be recovered → clearTokens → re-login ✓
-  //   • Network / 5xx error → keep access token, show login, recover on retry ✓
   useEffect(() => {
     const restore = async () => {
       const accessToken = getAccessToken()
@@ -67,8 +55,6 @@ export function AuthProvider({ children }) {
         applyProfile(raw)
       } catch (err) {
         if (err?.response?.status === 401) {
-          // Access token expired and could not be refreshed (refresh token not
-          // available in memory after a hard refresh) — must re-login.
           clearTokens()
           clearSession()
         } else {
@@ -93,8 +79,6 @@ export function AuthProvider({ children }) {
 
       const { accessToken, refreshToken } = payload.tokens ?? payload
       const userData = payload.admin ?? payload.user
-
-      // accessToken → localStorage | refreshToken → memory only
       setTokens(accessToken, refreshToken)
       applyProfile(userData)
 
@@ -111,7 +95,7 @@ export function AuthProvider({ children }) {
   // ── Logout ─────────────────────────────────────────────────────────────────────
   const logout = async () => {
     try { await apiLogout(getRefreshToken()) } catch { /* best-effort */ }
-    clearTokens()   // removes access token from localStorage, wipes refresh token from memory
+    clearTokens()   
     clearSession()
   }
 
@@ -122,3 +106,4 @@ export function AuthProvider({ children }) {
   )
 }
 
+export const useAuth = () => useContext(AuthContext)
