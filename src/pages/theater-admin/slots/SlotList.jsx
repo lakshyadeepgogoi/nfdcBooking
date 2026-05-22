@@ -3,42 +3,23 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { Plus, MoreHorizontal, Pencil, Power, Clock, Loader2 } from "lucide-react"
-import { parseList } from "@/utils/parseList"
+import { Plus, MoreHorizontal, Pencil, Power, Clock, Loader2, Info } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
-import { Checkbox } from "@/components/ui/checkbox"
+import { Badge } from "@/components/ui/badge"
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog"
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form"
 import PageHeader from "@/components/common/PageHeader"
@@ -49,56 +30,67 @@ import FormInput from "@/components/forms/FormInput"
 import { useAuth } from "@/hooks/useAuth"
 import { listAudis } from "@/api/audi"
 import { listSlots, createSlot, updateSlot, updateSlotStatus } from "@/api/slots"
+import { formatINR } from "@/utils/formatCurrency"
 
-const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+// ─── Schema ────────────────────────────────────────────────────────────────────
+// Backend slot: { name, config: { startTime, endTime, pricing: { govt, nonGovt } } }
+// There is NO 'days' field in the slot schema.
 
 const slotSchema = z
   .object({
-    name: z.string().min(1, "Name is required"),
-    startTime: z.string().min(1, "Start time is required"),
-    endTime: z.string().min(1, "End time is required"),
-    days: z.array(z.string()).min(1, "Select at least one day"),
+    name:           z.string().min(1, "Name is required"),
+    startTime:      z.string().min(1, "Start time is required"),
+    endTime:        z.string().min(1, "End time is required"),
+    pricingGovt:    z.coerce.number().min(0).optional().or(z.literal("")),
+    pricingNonGovt: z.coerce.number().min(0).optional().or(z.literal("")),
   })
-  .refine((d) => d.endTime > d.startTime, {
+  .refine(d => d.endTime > d.startTime, {
     message: "End time must be after start time",
     path: ["endTime"],
   })
 
-function SlotDialog({ open, onOpenChange, audiId, editingSlot, onSuccess }) {
+// ─── Slot Dialog ───────────────────────────────────────────────────────────────
+
+function SlotDialog({ open, onOpenChange, audiId, editingSlot }) {
+  const queryClient = useQueryClient()
+
   const form = useForm({
     resolver: zodResolver(slotSchema),
-    defaultValues: { name: "", startTime: "", endTime: "", days: [] },
+    defaultValues: { name: "", startTime: "", endTime: "", pricingGovt: "", pricingNonGovt: "" },
   })
 
   useEffect(() => {
-    if (open) {
-      form.reset(
-        editingSlot
-          ? {
-              name: editingSlot.name ?? "",
-              startTime: editingSlot.startTime ?? "",
-              endTime: editingSlot.endTime ?? "",
-              days: editingSlot.days ?? [],
-            }
-          : { name: "", startTime: "", endTime: "", days: [] }
-      )
-    }
+    if (!open) return
+    form.reset(editingSlot ? {
+      name:           editingSlot.name ?? "",
+      startTime:      editingSlot.config?.startTime ?? "",
+      endTime:        editingSlot.config?.endTime ?? "",
+      pricingGovt:    editingSlot.config?.pricing?.govt ?? "",
+      pricingNonGovt: editingSlot.config?.pricing?.nonGovt ?? "",
+    } : { name: "", startTime: "", endTime: "", pricingGovt: "", pricingNonGovt: "" })
   }, [open, editingSlot, form])
 
-  const queryClient = useQueryClient()
-
   const mutation = useMutation({
-    mutationFn: (values) =>
-      editingSlot
-        ? updateSlot(editingSlot.id ?? editingSlot._id, values)
-        : createSlot({ audiId, ...values }),
+    mutationFn: (v) => {
+      const config = {
+        startTime: v.startTime,
+        endTime:   v.endTime,
+        pricing: {
+          govt:    v.pricingGovt    !== "" ? Number(v.pricingGovt)    : undefined,
+          nonGovt: v.pricingNonGovt !== "" ? Number(v.pricingNonGovt) : undefined,
+        },
+      }
+      const id = editingSlot?.slotId ?? editingSlot?.id ?? editingSlot?._id
+      return editingSlot
+        ? updateSlot(id, { name: v.name, config })
+        : createSlot({ name: v.name, audiId, config })
+    },
     onSuccess: () => {
       toast.success(editingSlot ? "Slot updated" : "Slot created")
       queryClient.invalidateQueries({ queryKey: ["slots", audiId] })
       onOpenChange(false)
-      if (onSuccess) onSuccess()
     },
-    onError: () => toast.error("Something went wrong. Please try again."),
+    onError: (err) => toast.error(err?.response?.data?.message ?? "Something went wrong."),
   })
 
   return (
@@ -108,90 +100,45 @@ function SlotDialog({ open, onOpenChange, audiId, editingSlot, onSuccess }) {
           <DialogTitle>{editingSlot ? "Edit Slot" : "Add Slot"}</DialogTitle>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))} className="space-y-4">
+          <form onSubmit={form.handleSubmit(v => mutation.mutate(v))} className="space-y-4">
             <FormInput control={form.control} name="name" label="Slot Name" placeholder="Morning Slot" />
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="startTime"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Start Time</FormLabel>
-                    <FormControl>
-                      <input
-                        type="time"
-                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="endTime"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>End Time</FormLabel>
-                    <FormControl>
-                      <input
-                        type="time"
-                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
 
-            <FormField
-              control={form.control}
-              name="days"
-              render={({ field }) => (
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="startTime" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Days</FormLabel>
+                  <FormLabel>Start Time</FormLabel>
                   <FormControl>
-                    <div className="flex flex-wrap gap-3 pt-1">
-                      {DAYS.map((day) => {
-                        const checked = field.value.includes(day)
-                        return (
-                          <div key={day} className="flex items-center gap-1.5">
-                            <Checkbox
-                              id={`day-${day}`}
-                              checked={checked}
-                              onCheckedChange={(c) =>
-                                field.onChange(
-                                  c
-                                    ? [...field.value, day]
-                                    : field.value.filter((d) => d !== day)
-                                )
-                              }
-                            />
-                            <Label htmlFor={`day-${day}`} className="text-sm font-normal cursor-pointer">
-                              {day}
-                            </Label>
-                          </div>
-                        )
-                      })}
-                    </div>
+                    <input type="time" {...field}
+                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
-              )}
-            />
+              )} />
+              <FormField control={form.control} name="endTime" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>End Time</FormLabel>
+                  <FormControl>
+                    <input type="time" {...field}
+                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Pricing (optional)</p>
+              <div className="grid grid-cols-2 gap-4">
+                <FormInput control={form.control} name="pricingGovt"
+                  label="Govt Rate (₹)" type="number" placeholder="e.g. 5000" />
+                <FormInput control={form.control} name="pricingNonGovt"
+                  label="Non-Govt Rate (₹)" type="number" placeholder="e.g. 10000" />
+              </div>
+            </div>
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={mutation.isPending}
-                className="bg-nfdc-primary hover:bg-nfdc-primary/90"
-              >
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button type="submit" disabled={mutation.isPending} className="bg-nfdc-primary hover:bg-nfdc-primary/90">
                 {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {editingSlot ? "Save" : "Create"}
               </Button>
@@ -203,31 +150,47 @@ function SlotDialog({ open, onOpenChange, audiId, editingSlot, onSuccess }) {
   )
 }
 
-export default function SlotList() {
-  useEffect(() => {
-    document.title = "NFDC Admin — Slots"
-  }, [])
+// ─── Main Page ─────────────────────────────────────────────────────────────────
 
-  const { user } = useAuth()
-  const theaterId = user?.theaterId
+export default function SlotList() {
+  useEffect(() => { document.title = "NFDC Admin — Slots" }, [])
+
+  const { user }    = useAuth()
+  const theaterId   = user?.theaterId
   const queryClient = useQueryClient()
 
   const [selectedAudiId, setSelectedAudiId] = useState("")
-  const [createDialogOpen, setCreateDialogOpen] = useState(false)
-  const [editingSlot, setEditingSlot] = useState(null)
-  const [statusTarget, setStatusTarget] = useState(null)
+  const [createOpen,     setCreateOpen]     = useState(false)
+  const [editingSlot,    setEditingSlot]     = useState(null)
+  const [statusTarget,   setStatusTarget]   = useState(null)
 
-  const { data: audis } = useQuery({
+  // All audis for this theater
+  const { data: audisRaw } = useQuery({
     queryKey: ["audis", theaterId],
-    queryFn: () => listAudis(theaterId).then((r) => parseList(r.data.data)),
+    queryFn: () => listAudis(theaterId).then(r => r.data.data),
     enabled: !!theaterId,
   })
 
-  const { data: slots, isLoading } = useQuery({
+  const allAudis = Array.isArray(audisRaw?.data)
+    ? audisRaw.data
+    : Array.isArray(audisRaw) ? audisRaw : []
+
+  // Determine the mode of the currently selected audi
+  const selectedAudi = allAudis.find(a =>
+    (a.audiId ?? a.id ?? a._id) === selectedAudiId
+  )
+  const selectedMode = selectedAudi?.config?.slotMode  // "fixed" | "flexible" | undefined
+
+  // Fetch ALL slots for the selected audi (no status filter → active + inactive)
+  const { data: slotsRaw, isLoading } = useQuery({
     queryKey: ["slots", selectedAudiId],
-    queryFn: () => listSlots(selectedAudiId).then((r) => parseList(r.data.data)),
+    queryFn: () => listSlots(selectedAudiId).then(r => r.data.data),
     enabled: !!selectedAudiId,
   })
+
+  const slots = Array.isArray(slotsRaw?.data)
+    ? slotsRaw.data
+    : Array.isArray(slotsRaw) ? slotsRaw : []
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }) => updateSlotStatus(id, status),
@@ -246,32 +209,55 @@ export default function SlotList() {
       cell: ({ getValue }) => <span className="font-medium">{getValue()}</span>,
     },
     {
-      accessorKey: "startTime",
-      header: "Start Time",
+      id: "startTime",
+      header: "Start",
+      cell: ({ row }) => row.original.config?.startTime ?? "—",
     },
     {
-      accessorKey: "endTime",
-      header: "End Time",
+      id: "endTime",
+      header: "End",
+      cell: ({ row }) => row.original.config?.endTime ?? "—",
     },
     {
-      accessorKey: "days",
-      header: "Days",
-      cell: ({ getValue }) => {
-        const days = getValue()
-        return Array.isArray(days) ? days.join(", ") : days
+      id: "duration",
+      header: "Duration",
+      cell: ({ row }) => {
+        const s = row.original.config?.startTime
+        const e = row.original.config?.endTime
+        if (!s || !e) return "—"
+        const toMins = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m }
+        const diff = toMins(e) - toMins(s)
+        if (diff <= 0) return "—"
+        const h = Math.floor(diff / 60), m = diff % 60
+        return h > 0 ? `${h}h${m > 0 ? ` ${m}m` : ""}` : `${m}m`
       },
     },
     {
-      accessorKey: "status",
+      id: "pricing",
+      header: "Pricing",
+      cell: ({ row }) => {
+        const p = row.original.config?.pricing
+        if (!p?.govt && !p?.nonGovt) return <span className="text-xs text-muted-foreground">Not set</span>
+        return (
+          <div className="text-xs space-y-0.5">
+            {p.govt    != null && <p>Govt: {formatINR(p.govt)}</p>}
+            {p.nonGovt != null && <p>Non-Govt: {formatINR(p.nonGovt)}</p>}
+          </div>
+        )
+      },
+    },
+    {
+      id: "status",
       header: "Status",
-      cell: ({ getValue }) => <StatusBadge status={getValue()} />,
+      cell: ({ row }) => <StatusBadge status={row.original.lifecycle?.status} />,
     },
     {
       id: "actions",
       header: "",
       cell: ({ row }) => {
-        const slot = row.original
-        const isActive = slot.status === "active"
+        const slot     = row.original
+        const id       = slot.slotId ?? slot.id ?? slot._id
+        const isActive = slot.lifecycle?.status === "active"
         return (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -281,14 +267,11 @@ export default function SlotList() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => setEditingSlot(slot)}>
-                <Pencil className="mr-2 h-4 w-4" />
-                Edit
+                <Pencil className="mr-2 h-4 w-4" /> Edit
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onClick={() =>
-                  setStatusTarget({ id: slot.id ?? slot._id, name: slot.name, isActive })
-                }
+                onClick={() => setStatusTarget({ id, name: slot.name, isActive })}
                 className={isActive ? "text-destructive focus:text-destructive" : ""}
               >
                 <Power className="mr-2 h-4 w-4" />
@@ -305,64 +288,81 @@ export default function SlotList() {
     <div className="space-y-6">
       <PageHeader title="Slots" />
 
+      {/* Audi selector — all audis, not just fixed */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <Select value={selectedAudiId} onValueChange={setSelectedAudiId}>
-          <SelectTrigger className="w-full sm:w-64">
-            <SelectValue placeholder="Select an audi to view slots" />
+          <SelectTrigger className="w-full sm:w-72">
+            <SelectValue placeholder={
+              allAudis.length === 0 ? "No audis found" : "Select an audi"
+            } />
           </SelectTrigger>
           <SelectContent>
-            {(audis ?? []).map((a) => (
-              <SelectItem key={a.id ?? a._id} value={a.id ?? a._id}>
-                {a.name}
-              </SelectItem>
-            ))}
+            {allAudis.map(a => {
+              const id   = a.audiId ?? a.id ?? a._id
+              const mode = a.config?.slotMode
+              return (
+                <SelectItem key={id} value={id}>
+                  <span className="flex items-center gap-2">
+                    {a.name}
+                    {mode && (
+                      <Badge variant={mode === "fixed" ? "outline" : "secondary"} className="text-[10px] px-1 py-0 capitalize">
+                        {mode}
+                      </Badge>
+                    )}
+                  </span>
+                </SelectItem>
+              )
+            })}
           </SelectContent>
         </Select>
 
         <Button
-          onClick={() => setCreateDialogOpen(true)}
-          disabled={!selectedAudiId}
+          onClick={() => setCreateOpen(true)}
+          disabled={!selectedAudiId || selectedMode === "flexible"}
           className="bg-nfdc-primary hover:bg-nfdc-primary/90"
         >
-          <Plus className="mr-2 h-4 w-4" />
-          Add Slot
+          <Plus className="mr-2 h-4 w-4" /> Add Slot
         </Button>
       </div>
 
-      {!selectedAudiId ? (
+      {/* No audi selected */}
+      {!selectedAudiId && (
         <EmptyState
           icon={Clock}
           title="Select an audi"
-          message="Choose an audi above to manage its slots."
+          message="Choose an audi above to view and manage its time slots."
         />
-      ) : (
+      )}
+
+      {/* Flexible-mode audi selected — slots not applicable */}
+      {selectedAudiId && selectedMode === "flexible" && (
+        <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-blue-800">
+          <Info className="h-5 w-5 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium text-sm">Flexible mode audi</p>
+            <p className="text-sm mt-0.5">
+              Flexible-mode audis don't use time slots. Customers book any start/end time within the
+              valid <strong>Booking Durations</strong> set in the Audi settings.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Fixed or unknown mode — show slots table */}
+      {selectedAudiId && selectedMode !== "flexible" && (
         <DataTable
           columns={columns}
-          data={slots ?? []}
+          data={slots}
           isLoading={isLoading}
-          emptyMessage="No slots yet"
+          emptyMessage="No slots yet — add one above"
           emptyIcon={Clock}
         />
       )}
 
-      <SlotDialog
-        open={createDialogOpen}
-        onOpenChange={setCreateDialogOpen}
-        audiId={selectedAudiId}
-        editingSlot={null}
-      />
+      <SlotDialog open={createOpen}    onOpenChange={setCreateOpen}               audiId={selectedAudiId} editingSlot={null} />
+      <SlotDialog open={!!editingSlot} onOpenChange={o => !o && setEditingSlot(null)} audiId={selectedAudiId} editingSlot={editingSlot} />
 
-      <SlotDialog
-        open={!!editingSlot}
-        onOpenChange={(open) => !open && setEditingSlot(null)}
-        audiId={selectedAudiId}
-        editingSlot={editingSlot}
-      />
-
-      <AlertDialog
-        open={!!statusTarget}
-        onOpenChange={(open) => !open && setStatusTarget(null)}
-      >
+      <AlertDialog open={!!statusTarget} onOpenChange={o => !o && setStatusTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -370,19 +370,18 @@ export default function SlotList() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {statusTarget?.isActive
-                ? "This will deactivate the slot."
-                : "This will activate the slot."}
+                ? "This slot will no longer be available for new bookings."
+                : "This slot will become available for bookings again."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() =>
-                statusMutation.mutate({
-                  id: statusTarget.id,
-                  status: statusTarget.isActive ? "inactive" : "active",
-                })
-              }
+              onClick={() => statusMutation.mutate({
+                id:     statusTarget.id,
+                status: statusTarget.isActive ? "inactive" : "active",
+              })}
+              className={statusTarget?.isActive ? "bg-destructive hover:bg-destructive/90" : ""}
             >
               Confirm
             </AlertDialogAction>

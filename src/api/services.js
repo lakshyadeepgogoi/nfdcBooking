@@ -1,7 +1,11 @@
 import api from "./axiosInstance"
 
-export const listServicesGrouped = (audiId) =>
-  api.get("/services", { params: { audiId } })
+// ── Services ──────────────────────────────────────────────────────────────────
+// GET /services returns { sections:[...], ungrouped:{...} }
+// Pass audiId OR theaterId; omit status to get all (active + inactive) for admin.
+
+export const listServicesGrouped = (params) =>
+  api.get("/services", { params })
 
 export const createService = (data) =>
   api.post("/admin/services", data)
@@ -15,8 +19,10 @@ export const moveService = (id, sectionId) =>
 export const updateServiceStatus = (id, status) =>
   api.patch(`/admin/services/${id}/status`, { status })
 
-export const listSections = (audiId) =>
-  api.get("/service-sections", { params: { audiId } })
+// ── Service Sections ──────────────────────────────────────────────────────────
+
+export const listSections = (params) =>
+  api.get("/service-sections", { params })
 
 export const createSection = (data) =>
   api.post("/admin/service-sections", data)
@@ -24,7 +30,7 @@ export const createSection = (data) =>
 export const updateSection = (id, data) =>
   api.patch(`/admin/service-sections/${id}`, data)
 
-export const reorderSections = (id, newOrder) =>
+export const reorderSection = (id, newOrder) =>
   api.patch(`/admin/service-sections/${id}/reorder`, { newOrder })
 
 export const updateSectionStatus = (id, status) =>
