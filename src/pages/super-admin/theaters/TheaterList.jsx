@@ -4,11 +4,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { Eye, Power, MoreHorizontal, Plus, Loader2 } from "lucide-react"
+import { Eye, Power, MoreHorizontal, Plus, Loader2, X } from "lucide-react"
 import RoleGuard from "@/components/common/RoleGuard"
 import { PERMISSIONS } from "@/auth/permissions"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { Separator } from "@/components/ui/separator"
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -25,63 +30,175 @@ import DataTable from "@/components/common/DataTable"
 import StatusBadge from "@/components/common/StatusBadge"
 import FormInput from "@/components/forms/FormInput"
 import { listAllTheaters, createTheater, updateTheaterStatus } from "@/api/superAdmin"
+import { parseList } from "@/utils/parseList"
+
+// ─── Schema ────────────────────────────────────────────────────────────────────
 
 const createTheaterSchema = z.object({
-  name:    z.string().min(2, "Min 2 characters").max(200, "Max 200 characters"),
+  name:    z.string().min(2, "Min 2 characters").max(200),
   address: z.string().optional(),
   city:    z.string().optional(),
   state:   z.string().optional(),
+  pincode: z.string().optional(),
   phone:   z.string().optional(),
   email:   z.union([z.string().email("Enter a valid email"), z.literal("")]).optional(),
+  mid:     z.string().optional(),
 })
+
+// ─── Create Dialog ─────────────────────────────────────────────────────────────
 
 function CreateTheaterDialog({ open, onOpenChange }) {
   const queryClient = useQueryClient()
 
+  // extra local state (amenities + parking can't go through react-hook-form easily)
+  const [amenities,        setAmenities]       = useState([])
+  const [amenityInput,     setAmenityInput]     = useState("")
+  const [parkingAvailable, setParkingAvailable] = useState(false)
+  const [parkingCapacity,  setParkingCapacity]  = useState("")
+  const [parkingNotes,     setParkingNotes]     = useState("")
+
   const form = useForm({
     resolver: zodResolver(createTheaterSchema),
-    defaultValues: { name: "", address: "", city: "", state: "", phone: "", email: "" },
+    defaultValues: { name: "", address: "", city: "", state: "", pincode: "", phone: "", email: "", mid: "" },
   })
 
   useEffect(() => {
-    if (open) form.reset({ name: "", address: "", city: "", state: "", phone: "", email: "" })
+    if (open) {
+      form.reset({ name: "", address: "", city: "", state: "", pincode: "", phone: "", email: "", mid: "" })
+      setAmenities([])
+      setAmenityInput("")
+      setParkingAvailable(false)
+      setParkingCapacity("")
+      setParkingNotes("")
+    }
   }, [open, form])
+
+  const addAmenity = () => {
+    const v = amenityInput.trim()
+    if (v && !amenities.includes(v)) { setAmenities(a => [...a, v]); setAmenityInput("") }
+  }
 
   const mutation = useMutation({
     mutationFn: (values) => {
-      const { name, ...rest } = values
-      const details = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== ""))
-      return createTheater({ name, ...(Object.keys(details).length ? { details } : {}) })
+      const { name, mid, ...detailFields } = values
+
+      // build details — only include non-empty fields
+      const details = Object.fromEntries(
+        Object.entries(detailFields).filter(([, v]) => v !== "")
+      )
+      if (amenities.length) details.amenities = amenities
+      details.parking = {
+        available: parkingAvailable,
+        ...(parkingAvailable && parkingCapacity !== "" ? { capacity: Number(parkingCapacity) } : {}),
+        ...(parkingAvailable && parkingNotes ? { notes: parkingNotes } : {}),
+      }
+
+      return createTheater({
+        name,
+        ...(Object.keys(details).length ? { details } : {}),
+        ...(mid ? { paymentConfig: { mid } } : {}),
+      })
     },
     onSuccess: () => {
       toast.success("Theater created successfully")
       queryClient.invalidateQueries({ queryKey: ["theaters"] })
       onOpenChange(false)
     },
-    onError: (err) => {
-      const msg = err?.response?.data?.message ?? "Something went wrong. Please try again."
-      toast.error(msg)
-    },
+    onError: (err) => toast.error(err?.response?.data?.message ?? "Something went wrong."),
   })
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg" aria-describedby={undefined}>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>Create Theater</DialogTitle>
         </DialogHeader>
+
         <Form {...form}>
-          <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))} className="space-y-4">
-            <FormInput control={form.control} name="name" label="Theater Name" placeholder="NFDC Cinema, Mumbai" />
-            <FormInput control={form.control} name="address" label="Address (optional)" placeholder="123 Main Street" />
-            <div className="grid grid-cols-2 gap-4">
-              <FormInput control={form.control} name="city"  label="City (optional)"  placeholder="Mumbai" />
-              <FormInput control={form.control} name="state" label="State (optional)" placeholder="Maharashtra" />
+          <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))} className="space-y-6">
+
+            {/* ── Basic Info ─────────────────────────────────────────────── */}
+            <div className="space-y-4">
+              <p className="text-sm font-medium text-muted-foreground">Basic Information</p>
+              <FormInput control={form.control} name="name" label="Theater Name *" placeholder="NFDC Cinema, Mumbai" />
+              <FormInput control={form.control} name="address" label="Address" placeholder="123 Main Street" />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <FormInput control={form.control} name="city"    label="City"    placeholder="Mumbai" />
+                <FormInput control={form.control} name="state"   label="State"   placeholder="Maharashtra" />
+                <FormInput control={form.control} name="pincode" label="Pincode" placeholder="400001" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <FormInput control={form.control} name="phone" label="Phone"              placeholder="+91 22 1234 5678" />
+                <FormInput control={form.control} name="email" label="Email" type="email" placeholder="contact@theater.in" />
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <FormInput control={form.control} name="phone" label="Phone (optional)" placeholder="+91 98765 43210" />
-              <FormInput control={form.control} name="email" label="Email (optional)" type="email" placeholder="contact@theater.in" />
+
+            <Separator />
+
+            {/* ── Payment ─────────────────────────────────────────────────── */}
+            <div className="space-y-4">
+              <p className="text-sm font-medium text-muted-foreground">Payment Configuration</p>
+              <FormInput control={form.control} name="mid" label="Payment MID (optional)" placeholder="e.g. NFDC_SIRIFORT_MID" />
             </div>
+
+            <Separator />
+
+            {/* ── Amenities ───────────────────────────────────────────────── */}
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-muted-foreground">Amenities</p>
+              <div className="flex flex-wrap gap-2 min-h-[32px]">
+                {amenities.length === 0 && <span className="text-sm text-muted-foreground">None added</span>}
+                {amenities.map((a) => (
+                  <Badge key={a} variant="secondary" className="gap-1 pr-1">
+                    {a}
+                    <button type="button" onClick={() => setAmenities(x => x.filter(i => i !== a))}
+                      className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Add amenity (e.g. 4K Projection)"
+                  value={amenityInput}
+                  onChange={(e) => setAmenityInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addAmenity() } }}
+                  className="max-w-xs"
+                />
+                <Button type="button" variant="outline" size="sm" onClick={addAmenity}>
+                  <Plus className="h-4 w-4 mr-1" /> Add
+                </Button>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* ── Parking ─────────────────────────────────────────────────── */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-muted-foreground">Parking</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">{parkingAvailable ? "Available" : "Not available"}</span>
+                  <Switch checked={parkingAvailable} onCheckedChange={setParkingAvailable} />
+                </div>
+              </div>
+              {parkingAvailable && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Capacity (optional)</Label>
+                    <Input type="number" placeholder="e.g. 120" value={parkingCapacity}
+                      onChange={(e) => setParkingCapacity(e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Notes (optional)</Label>
+                    <Input placeholder="e.g. Basement parking" value={parkingNotes}
+                      onChange={(e) => setParkingNotes(e.target.value)} />
+                  </div>
+                </div>
+              )}
+            </div>
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
               <Button type="submit" disabled={mutation.isPending} className="bg-nfdc-primary hover:bg-nfdc-primary/90">
@@ -96,6 +213,8 @@ function CreateTheaterDialog({ open, onOpenChange }) {
   )
 }
 
+// ─── Main Page ──────────────────────────────────────────────────────────────────
+
 export default function TheaterList() {
   useEffect(() => { document.title = "NFDC Admin — Theaters" }, [])
 
@@ -108,11 +227,9 @@ export default function TheaterList() {
 
   const { data: raw, isLoading } = useQuery({
     queryKey: ["theaters", page],
-    queryFn: () =>
-      listAllTheaters({ page, limit: pageSize }).then(r => r.data.data),
+    queryFn: () => listAllTheaters({ page, limit: pageSize }).then(r => r.data.data),
   })
 
-  // Response: { data: [...], pagination: { total, page, limit, totalPages } }
   const theaters = Array.isArray(raw?.data) ? raw.data : []
   const total    = raw?.pagination?.total ?? theaters.length
 
@@ -165,7 +282,7 @@ export default function TheaterList() {
       header: "",
       cell: ({ row }) => {
         const theater  = row.original
-        const id       = theater.theaterId          // always use the UUID, not _id
+        const id       = theater.theaterId
         const isActive = theater.lifecycle?.status === "active"
         return (
           <DropdownMenu>
@@ -177,7 +294,7 @@ export default function TheaterList() {
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => navigate(`/super/theaters/${id}`)}>
                 <Eye className="mr-2 h-4 w-4" />
-                View Details
+                View / Edit
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -198,10 +315,7 @@ export default function TheaterList() {
     <div className="space-y-6">
       <PageHeader title="Theaters">
         <RoleGuard permissions={PERMISSIONS.CREATE_THEATER}>
-          <Button
-            className="bg-nfdc-primary hover:bg-nfdc-primary/90"
-            onClick={() => setCreateOpen(true)}
-          >
+          <Button className="bg-nfdc-primary hover:bg-nfdc-primary/90" onClick={() => setCreateOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
             Add Theater
           </Button>
