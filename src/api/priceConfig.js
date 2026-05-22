@@ -3,6 +3,9 @@ import api from "./axiosInstance"
 export const listPriceConfigs = (params) =>
   api.get("/admin/price-config", { params })
 
+export const getPriceConfig = (id) =>
+  api.get(`/admin/price-config/${id}`)
+
 export const createPriceConfig = (data) =>
   api.post("/admin/price-config", data)
 
