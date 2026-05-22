@@ -7,6 +7,7 @@ import AdminList from "@/pages/super-admin/admins/AdminList"
 import CrossTheaterBookings from "@/pages/super-admin/bookings/CrossTheaterBookings"
 import PlatformAnalytics from "@/pages/super-admin/analytics/PlatformAnalytics"
 import ActivityLogs from "@/pages/super-admin/activity-logs/ActivityLogs"
+import Profile from "@/pages/Profile"
 
 export default function SuperAdminRoutes() {
   return (
@@ -20,6 +21,7 @@ export default function SuperAdminRoutes() {
         <Route path="bookings" element={<CrossTheaterBookings />} />
         <Route path="analytics" element={<PlatformAnalytics />} />
         <Route path="logs" element={<ActivityLogs />} />
+        <Route path="profile" element={<Profile />} />
       </Route>
     </Routes>
   )

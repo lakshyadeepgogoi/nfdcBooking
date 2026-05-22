@@ -83,7 +83,11 @@ function SidebarContent({ navItems, onClose }) {
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-40">
-            <DropdownMenuItem disabled>Profile</DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link to={role === "super-admin" ? "/super/profile" : "/admin/profile"} onClick={onClose}>
+                Profile
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
               <LogOut className="mr-2 h-4 w-4" />
