@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import {
-  Plus, Pencil, ListChecks, Loader2, MoreHorizontal, GripVertical,
+  Plus, Pencil, ListChecks, Loader2, MoreHorizontal, GripVertical, History,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -28,6 +28,11 @@ import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Separator } from "@/components/ui/separator"
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from "@/components/ui/sheet"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog"
@@ -188,7 +193,6 @@ function ServiceDialog({ open, onOpenChange, scopeParams, sectionId, editingServ
         : createService({ ...scopeParams, sectionId: resolvedSection, name: v.name, config })
     },
     onSuccess: async () => {
-      // If editing and section changed, move the service
       if (editingService) {
         const id = editingService.serviceId ?? editingService.id ?? editingService._id
         const currentSection = editingService.relationships?.sectionId ?? null
@@ -224,7 +228,6 @@ function ServiceDialog({ open, onOpenChange, scopeParams, sectionId, editingServ
               </div>
             </div>
 
-            {/* Section assignment */}
             <div className="space-y-1">
               <Label className="text-sm font-medium">Section</Label>
               <Select value={targetSection} onValueChange={setTargetSection}>
@@ -238,7 +241,6 @@ function ServiceDialog({ open, onOpenChange, scopeParams, sectionId, editingServ
               </Select>
             </div>
 
-            {/* isMandatory */}
             <FormField control={form.control} name="isMandatory" render={({ field }) => (
               <FormItem className="flex items-center gap-2 space-y-0">
                 <FormControl>
@@ -264,11 +266,183 @@ function ServiceDialog({ open, onOpenChange, scopeParams, sectionId, editingServ
   )
 }
 
+// ─── Service History Sheet ─────────────────────────────────────────────────────
+
+function ServiceHistorySheet({ svc, open, onClose, cacheKey }) {
+  const queryClient = useQueryClient()
+  const { user }    = useAuth()
+
+  // Keep a local copy so we can update it instantly after a status change
+  const [localSvc, setLocalSvc] = useState(svc)
+  const [note, setNote]         = useState("")
+
+  // Sync when a different service is selected
+  useEffect(() => { if (svc) setLocalSvc(svc) }, [svc])
+  // Clear note when sheet closes
+  useEffect(() => { if (!open) setNote("") }, [open])
+
+  const isActive = localSvc?.lifecycle?.status === "active"
+
+  // Sort newest-first
+  const statusHistory = [...(localSvc?.lifecycle?.statusHistory ?? [])].sort(
+    (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
+  )
+
+  const mutation = useMutation({
+    mutationFn: ({ id, status, note }) => updateServiceStatus(id, status, note),
+    onSuccess: (response) => {
+      const updated = response?.data?.data ?? response?.data
+      if (updated?.lifecycle) setLocalSvc(prev => ({ ...prev, lifecycle: updated.lifecycle }))
+      toast.success(`Service ${isActive ? "deactivated" : "activated"}`)
+      setNote("")
+      queryClient.invalidateQueries({ queryKey: ["services", cacheKey] })
+    },
+    onError: (err) => toast.error(err?.response?.data?.message ?? "Something went wrong."),
+  })
+
+  const handleToggle = () => {
+    const id = localSvc?.serviceId ?? localSvc?.id ?? localSvc?._id
+    mutation.mutate({ id, status: isActive ? "inactive" : "active", note: note.trim() || undefined })
+  }
+
+  if (!localSvc) return null
+
+  const pricing = localSvc.config?.pricing
+
+  return (
+    <Sheet open={open} onOpenChange={o => !o && onClose()}>
+      <SheetContent className="w-full sm:max-w-md flex flex-col gap-0 p-0">
+
+        {/* Fixed header */}
+        <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
+          <SheetTitle className="leading-snug">{localSvc.name}</SheetTitle>
+          <SheetDescription>Status controls &amp; history</SheetDescription>
+        </SheetHeader>
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+
+          {/* Service info chips */}
+          {(localSvc.config?.isMandatory || pricing?.govt != null || pricing?.nonGovt != null) && (
+            <div className="flex flex-wrap gap-2 text-xs">
+              {localSvc.config?.isMandatory && (
+                <Badge variant="secondary">Mandatory</Badge>
+              )}
+              {pricing?.govt != null && (
+                <Badge variant="outline">Govt: {formatINR(pricing.govt)}</Badge>
+              )}
+              {pricing?.nonGovt != null && (
+                <Badge variant="outline">Non-Govt: {formatINR(pricing.nonGovt)}</Badge>
+              )}
+            </div>
+          )}
+
+          {/* ── Status control ── */}
+          <div className="rounded-lg border p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold">Current Status</p>
+              <StatusBadge status={localSvc.lifecycle?.status} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">
+                Reason / note <span className="font-normal">(optional)</span>
+              </Label>
+              <Textarea
+                placeholder={`Why are you ${isActive ? "deactivating" : "activating"} this service?`}
+                className="resize-none text-sm min-h-[72px]"
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                disabled={mutation.isPending}
+              />
+            </div>
+
+            <Button
+              className={`w-full ${
+                isActive
+                  ? "bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                  : "bg-nfdc-primary hover:bg-nfdc-primary/90"
+              }`}
+              onClick={handleToggle}
+              disabled={mutation.isPending}
+            >
+              {mutation.isPending
+                ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…</>
+                : isActive ? "Deactivate Service" : "Activate Service"
+              }
+            </Button>
+          </div>
+
+          <Separator />
+
+          {/* ── Status history timeline ── */}
+          <div className="space-y-3">
+            <p className="text-sm font-semibold flex items-center gap-2">
+              <History className="h-4 w-4 text-muted-foreground" />
+              Status History
+            </p>
+
+            {statusHistory.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">
+                No history recorded yet.
+              </p>
+            ) : (
+              <div>
+                {statusHistory.map((entry, i) => {
+                  const isLast   = i === statusHistory.length - 1
+                  const byYou    = entry.changedBy && entry.changedBy === user?.adminId
+                  const dateStr  = new Date(entry.timestamp).toLocaleString("en-IN", {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })
+
+                  return (
+                    <div key={i} className="flex gap-3">
+                      {/* Timeline dot + line */}
+                      <div className="flex flex-col items-center pt-1 shrink-0">
+                        <div className={`w-2.5 h-2.5 rounded-full ring-2 ring-background ${
+                          entry.status === "active" ? "bg-emerald-500" : "bg-slate-400"
+                        }`} />
+                        {!isLast && <div className="w-px flex-1 bg-border mt-1 mb-0" />}
+                      </div>
+
+                      {/* Entry content */}
+                      <div className={`${isLast ? "pb-0" : "pb-4"} min-w-0`}>
+                        <StatusBadge status={entry.status} />
+
+                        <p className="text-xs text-muted-foreground mt-1">{dateStr}</p>
+
+                        <p className="text-xs text-muted-foreground">
+                          Changed by{" "}
+                          {byYou
+                            ? <span className="font-medium text-foreground">you</span>
+                            : <span className="font-mono">{entry.changedBy ?? "—"}</span>
+                          }
+                        </p>
+
+                        {entry.note && (
+                          <p className="text-xs italic text-muted-foreground mt-1 bg-muted/50 rounded px-2 py-1">
+                            &quot;{entry.note}&quot;
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
 // ─── Service Row ───────────────────────────────────────────────────────────────
 
-function ServiceRow({ svc, onEdit, onToggleStatus }) {
-  const pricing    = svc.config?.pricing
-  const isActive   = svc.lifecycle?.status === "active"
+function ServiceRow({ svc, onEdit, onToggleStatus, onViewHistory }) {
+  const pricing     = svc.config?.pricing
+  const isActive    = svc.lifecycle?.status === "active"
   const isMandatory = svc.config?.isMandatory
 
   return (
@@ -277,7 +451,9 @@ function ServiceRow({ svc, onEdit, onToggleStatus }) {
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-medium">{svc.name}</span>
-            {isMandatory && <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Mandatory</Badge>}
+            {isMandatory && (
+              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Mandatory</Badge>
+            )}
             <StatusBadge status={svc.lifecycle?.status} />
           </div>
           {pricing && (pricing.govt != null || pricing.nonGovt != null) && (
@@ -290,14 +466,25 @@ function ServiceRow({ svc, onEdit, onToggleStatus }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-1 shrink-0">
+      <div className="flex items-center gap-0.5 shrink-0">
         <Switch
           checked={isActive}
           onCheckedChange={() => onToggleStatus(svc)}
           className="scale-90"
         />
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(svc)}>
+        <Button
+          variant="ghost" size="icon" className="h-7 w-7"
+          title="Edit service"
+          onClick={() => onEdit(svc)}
+        >
           <Pencil className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost" size="icon" className="h-7 w-7"
+          title="View status history"
+          onClick={() => onViewHistory(svc)}
+        >
+          <History className="h-3.5 w-3.5" />
         </Button>
       </div>
     </div>
@@ -306,7 +493,7 @@ function ServiceRow({ svc, onEdit, onToggleStatus }) {
 
 // ─── Section Card (sortable) ───────────────────────────────────────────────────
 
-function SectionCard({ section, isReordering, onEditSection, onToggleSectionStatus, onAddService, onEditService, onToggleServiceStatus }) {
+function SectionCard({ section, isReordering, onEditSection, onToggleSectionStatus, onAddService, onEditService, onToggleServiceStatus, onViewServiceHistory }) {
   const isActive = section.status === "active"
 
   const {
@@ -396,6 +583,7 @@ function SectionCard({ section, isReordering, onEditSection, onToggleSectionStat
                   svc={svc}
                   onEdit={onEditService}
                   onToggleStatus={onToggleServiceStatus}
+                  onViewHistory={onViewServiceHistory}
                 />
               ))}
             </div>
@@ -440,19 +628,18 @@ export default function ServiceList() {
   const [selectedScope, setSelectedScope]   = useState("theater")
   const [addSectionOpen, setAddSectionOpen] = useState(false)
   const [editingSection, setEditingSection] = useState(null)
-  const [addServiceCtx,  setAddServiceCtx]  = useState(null)  // { sectionId }
+  const [addServiceCtx,  setAddServiceCtx]  = useState(null)
   const [editingService, setEditingService] = useState(null)
   const [sectionToggle,  setSectionToggle]  = useState(null)
   const [serviceToggle,  setServiceToggle]  = useState(null)
+  const [historyService, setHistoryService] = useState(null)  // for status history sheet
   const [activeId,       setActiveId]       = useState(null)
 
-  // Scope params passed to API
   const scopeParams = selectedScope === "theater"
     ? { theaterId }
     : { audiId: selectedScope }
   const cacheKey = JSON.stringify(scopeParams)
 
-  // Audis list
   const { data: audisRaw } = useQuery({
     queryKey: ["audis", theaterId],
     queryFn: () => listAudis(theaterId).then(r => r.data.data),
@@ -460,15 +647,14 @@ export default function ServiceList() {
   })
   const allAudis = Array.isArray(audisRaw?.data) ? audisRaw.data : []
 
-  // Grouped services (all statuses — admin view)
   const { data: groupedRaw, isLoading } = useQuery({
     queryKey: ["services", cacheKey],
     queryFn: () => listServicesGrouped(scopeParams).then(r => r.data.data),
     enabled: !!theaterId,
   })
 
-  const sections  = groupedRaw?.sections  ?? []
-  const ungrouped = groupedRaw?.ungrouped ?? { sectionId: null, name: "Other Services", services: [] }
+  const sections    = groupedRaw?.sections  ?? []
+  const ungrouped   = groupedRaw?.ungrouped ?? { sectionId: null, name: "Other Services", services: [] }
   const allSections = sections
 
   // Status mutations
@@ -507,15 +693,10 @@ export default function ServiceList() {
   // ── Drag-and-drop ────────────────────────────────────────────────────────────
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      // Require 8px movement before a drag starts — prevents accidental drags on click
-      activationConstraint: { distance: 8 },
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   )
 
-  const handleDragStart = ({ active }) => {
-    setActiveId(active.id)
-  }
+  const handleDragStart = ({ active }) => setActiveId(active.id)
 
   const handleDragEnd = ({ active, over }) => {
     setActiveId(null)
@@ -528,9 +709,6 @@ export default function ServiceList() {
     const section = sections[oldIdx]
     const target  = sections[newIdx]
 
-    // Compute the newOrder integer expected by the backend reorder endpoint.
-    // Moving up: take the target's order if it's numerically lower, else slip below tie.
-    // Moving down: take the target's order if it's numerically higher, else slip above tie.
     let newOrder
     if (newIdx < oldIdx) {
       newOrder = target.order < section.order
@@ -542,7 +720,6 @@ export default function ServiceList() {
         : section.order + (newIdx - oldIdx)
     }
 
-    // Optimistic UI: reorder in cache immediately so the list snaps into place
     queryClient.setQueryData(["services", cacheKey], (old) => {
       if (!old) return old
       return { ...old, sections: arrayMove(old.sections, oldIdx, newIdx) }
@@ -551,11 +728,9 @@ export default function ServiceList() {
     reorderMutation.mutate({ id: section.sectionId, newOrder })
   }
 
-  const handleDragCancel = () => {
-    setActiveId(null)
-  }
+  const handleDragCancel = () => setActiveId(null)
 
-  // ── Status toggle handlers ────────────────────────────────────────────────────
+  // ── Status toggle helpers ─────────────────────────────────────────────────────
 
   const handleToggleSectionStatus = (section) => {
     setSectionToggle({
@@ -582,9 +757,7 @@ export default function ServiceList() {
       {/* Scope selector + Add buttons */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <Select value={selectedScope} onValueChange={setSelectedScope}>
-          <SelectTrigger className="w-full sm:w-72">
-            <SelectValue />
-          </SelectTrigger>
+          <SelectTrigger className="w-full sm:w-72"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="theater">Theater-wide</SelectItem>
             {allAudis.map(a => {
@@ -641,12 +814,12 @@ export default function ServiceList() {
                     onAddService={(sectionId) => setAddServiceCtx({ sectionId })}
                     onEditService={setEditingService}
                     onToggleServiceStatus={handleToggleServiceStatus}
+                    onViewServiceHistory={setHistoryService}
                   />
                 ))}
               </div>
             </SortableContext>
 
-            {/* Floating card that follows the cursor while dragging */}
             <DragOverlay dropAnimation={{ duration: 200, easing: "ease" }}>
               <SectionDragOverlay section={activeSection} />
             </DragOverlay>
@@ -671,6 +844,7 @@ export default function ServiceList() {
                       svc={svc}
                       onEdit={setEditingService}
                       onToggleStatus={handleToggleServiceStatus}
+                      onViewHistory={setHistoryService}
                     />
                   ))}
                 </div>
@@ -680,7 +854,8 @@ export default function ServiceList() {
         </div>
       )}
 
-      {/* Dialogs */}
+      {/* ── Dialogs & sheets ── */}
+
       <SectionDialog
         open={addSectionOpen}
         onOpenChange={setAddSectionOpen}
@@ -711,6 +886,14 @@ export default function ServiceList() {
         sections={allSections}
       />
 
+      {/* Service status history + toggle sheet */}
+      <ServiceHistorySheet
+        svc={historyService}
+        open={!!historyService}
+        onClose={() => setHistoryService(null)}
+        cacheKey={cacheKey}
+      />
+
       {/* Section status confirm */}
       <AlertDialog open={!!sectionToggle} onOpenChange={o => !o && setSectionToggle(null)}>
         <AlertDialogContent>
@@ -737,7 +920,7 @@ export default function ServiceList() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Service status confirm */}
+      {/* Quick service status confirm (inline Switch) */}
       <AlertDialog open={!!serviceToggle} onOpenChange={o => !o && setServiceToggle(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

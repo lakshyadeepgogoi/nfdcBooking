@@ -16,8 +16,8 @@ export const updateService = (id, data) =>
 export const moveService = (id, sectionId) =>
   api.patch(`/admin/services/${id}/move-section`, { sectionId })
 
-export const updateServiceStatus = (id, status) =>
-  api.patch(`/admin/services/${id}/status`, { status })
+export const updateServiceStatus = (id, status, note) =>
+  api.patch(`/admin/services/${id}/status`, { status, ...(note ? { note } : {}) })
 
 // ── Service Sections ──────────────────────────────────────────────────────────
 
