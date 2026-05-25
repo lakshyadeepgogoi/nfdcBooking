@@ -54,7 +54,10 @@ function StepIndicator({ step }) {
 // Step-2 schema — shared fields
 const baseSchema = z.object({
   name:        z.string().min(2, "Min 2 characters").max(200),
-  capacity:    z.coerce.number().int().min(1, "Min 1").max(10000, "Max 10000"),
+  capacity:    z.union([
+    z.coerce.number().int().min(1, "Min 1").max(10000, "Max 10000"),
+    z.literal(""),
+  ]).optional(),
   description: z.string().optional(),
   opStart:     z.string().optional(),
   opEnd:       z.string().optional(),
@@ -89,10 +92,14 @@ export default function AudiCreate() {
 
   const createMutation = useMutation({
     mutationFn: (data) => {
+      const capacity = data.capacity !== "" && data.capacity != null
+        ? Number(data.capacity)
+        : undefined
+
       const config = {
         slotMode:    mode,
-        capacity:    data.capacity,
-        description: data.description || undefined,
+        ...(capacity != null ? { capacity } : {}),
+        ...(data.description ? { description: data.description } : {}),
         ...(data.opStart || data.opEnd
           ? { operationalHours: { start: data.opStart || undefined, end: data.opEnd || undefined } }
           : {}),
@@ -100,10 +107,15 @@ export default function AudiCreate() {
       }
       return createAudi({ name: data.name, theaterId: user?.theaterId, config })
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       toast.success("Audi created successfully")
       queryClient.invalidateQueries({ queryKey: ["audis"] })
-      navigate("/admin/audis")
+      const newAudiId = res?.data?.data?.audiId
+      if (newAudiId) {
+        navigate(`/admin/audis/${newAudiId}`)
+      } else {
+        navigate("/admin/audis")
+      }
     },
     onError: (err) => toast.error(err?.response?.data?.message ?? "Something went wrong."),
   })
@@ -230,7 +242,7 @@ export default function AudiCreate() {
               {[
                 ["Audi Name",        formValues.name],
                 ["Mode",             <span className="capitalize">{mode}</span>],
-                ["Capacity",         formValues.capacity],
+                ["Capacity",         formValues.capacity !== "" && formValues.capacity != null ? `${formValues.capacity} seats` : "—"],
                 ["Description",      formValues.description || "—"],
                 ["Operational Hours",
                   formValues.opStart || formValues.opEnd

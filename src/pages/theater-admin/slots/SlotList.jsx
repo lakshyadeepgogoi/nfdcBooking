@@ -51,13 +51,27 @@ const slotSchema = z
 
 // ─── Slot Dialog ───────────────────────────────────────────────────────────────
 
-function SlotDialog({ open, onOpenChange, audiId, editingSlot }) {
+function SlotDialog({ open, onOpenChange, audiId, editingSlot, audi }) {
   const queryClient = useQueryClient()
+  const opStart = audi?.config?.operationalHours?.start ?? ""
+  const opEnd   = audi?.config?.operationalHours?.end   ?? ""
 
   const form = useForm({
     resolver: zodResolver(slotSchema),
-    defaultValues: { name: "", startTime: "", endTime: "", pricingGovt: "", pricingNonGovt: "" },
+    defaultValues: { name: "", startTime: opStart, endTime: opEnd, pricingGovt: "", pricingNonGovt: "" },
   })
+
+  const startTime = form.watch("startTime")
+  const endTime   = form.watch("endTime")
+
+  const liveDuration = (() => {
+    if (!startTime || !endTime) return null
+    const toMins = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m }
+    const diff = toMins(endTime) - toMins(startTime)
+    if (diff <= 0) return null
+    const h = Math.floor(diff / 60), m = diff % 60
+    return h > 0 ? `${h}h${m > 0 ? ` ${m}m` : ""}` : `${m}m`
+  })()
 
   useEffect(() => {
     if (!open) return
@@ -67,7 +81,7 @@ function SlotDialog({ open, onOpenChange, audiId, editingSlot }) {
       endTime:        editingSlot.config?.endTime ?? "",
       pricingGovt:    editingSlot.config?.pricing?.govt ?? "",
       pricingNonGovt: editingSlot.config?.pricing?.nonGovt ?? "",
-    } : { name: "", startTime: "", endTime: "", pricingGovt: "", pricingNonGovt: "" })
+    } : { name: "", startTime: opStart, endTime: opEnd, pricingGovt: "", pricingNonGovt: "" })
   }, [open, editingSlot, form])
 
   const mutation = useMutation({
@@ -103,31 +117,41 @@ function SlotDialog({ open, onOpenChange, audiId, editingSlot }) {
           <form onSubmit={form.handleSubmit(v => mutation.mutate(v))} className="space-y-4">
             <FormInput control={form.control} name="name" label="Slot Name" placeholder="Morning Slot" />
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField control={form.control} name="startTime" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Start Time</FormLabel>
-                  <FormControl>
-                    <input type="time" {...field}
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <FormField control={form.control} name="endTime" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>End Time</FormLabel>
-                  <FormControl>
-                    <input type="time" {...field}
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
+            <div className="space-y-1">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={form.control} name="startTime" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Start Time {opStart && <span className="font-normal text-muted-foreground text-xs">(from {opStart})</span>}</FormLabel>
+                    <FormControl>
+                      <input type="time" min={opStart || undefined} max={opEnd || undefined} {...field}
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="endTime" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>End Time {opEnd && <span className="font-normal text-muted-foreground text-xs">(until {opEnd})</span>}</FormLabel>
+                    <FormControl>
+                      <input type="time" min={opStart || undefined} max={opEnd || undefined} {...field}
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+              {liveDuration && (
+                <p className="text-xs text-muted-foreground">Duration: <strong>{liveDuration}</strong> — this will be matched against the Price Config hourly rates</p>
+              )}
             </div>
 
             <div className="space-y-2">
-              <p className="text-sm font-medium">Pricing (optional)</p>
+              <p className="text-sm font-medium">
+                Pricing
+                <span className="font-normal text-muted-foreground text-xs ml-1">
+                  (fallback — overridden by Price Config if one exists for this audi)
+                </span>
+              </p>
               <div className="grid grid-cols-2 gap-4">
                 <FormInput control={form.control} name="pricingGovt"
                   label="Govt Rate (₹)" type="number" placeholder="e.g. 5000" />
@@ -350,17 +374,27 @@ export default function SlotList() {
 
       {/* Fixed or unknown mode — show slots table */}
       {selectedAudiId && selectedMode !== "flexible" && (
-        <DataTable
-          columns={columns}
-          data={slots}
-          isLoading={isLoading}
-          emptyMessage="No slots yet — add one above"
-          emptyIcon={Clock}
-        />
+        <div className="space-y-4">
+          <div className="flex items-start gap-2.5 rounded-lg border bg-muted/30 p-3 text-sm">
+            <Info className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground" />
+            <p className="text-muted-foreground leading-snug">
+              Slots define the <span className="font-medium text-foreground">time windows users can book</span> (availability).
+              Slot pricing below is a <span className="font-medium text-foreground">fallback</span> — if a Price Config exists for this audi it takes precedence.
+              Configure authoritative rates in <span className="font-medium text-foreground">Price Configuration → Audi</span>.
+            </p>
+          </div>
+          <DataTable
+            columns={columns}
+            data={slots}
+            isLoading={isLoading}
+            emptyMessage="No slots yet — add one above"
+            emptyIcon={Clock}
+          />
+        </div>
       )}
 
-      <SlotDialog open={createOpen}    onOpenChange={setCreateOpen}               audiId={selectedAudiId} editingSlot={null} />
-      <SlotDialog open={!!editingSlot} onOpenChange={o => !o && setEditingSlot(null)} audiId={selectedAudiId} editingSlot={editingSlot} />
+      <SlotDialog open={createOpen}    onOpenChange={setCreateOpen}               audiId={selectedAudiId} editingSlot={null}        audi={selectedAudi} />
+      <SlotDialog open={!!editingSlot} onOpenChange={o => !o && setEditingSlot(null)} audiId={selectedAudiId} editingSlot={editingSlot} audi={selectedAudi} />
 
       <AlertDialog open={!!statusTarget} onOpenChange={o => !o && setStatusTarget(null)}>
         <AlertDialogContent>

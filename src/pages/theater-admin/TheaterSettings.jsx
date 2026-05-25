@@ -3,14 +3,15 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, Plus, X, Upload, Image as ImageIcon } from "lucide-react"
+import { Loader2, Plus, X, Upload, Image as ImageIcon, Clock, User, ChevronDown, ChevronUp } from "lucide-react"
 import { format } from "date-fns"
 import { toast } from "sonner"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
+import { RichTextEditor } from "@/components/ui/rich-text-editor"
+import { Separator } from "@/components/ui/separator"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Form } from "@/components/ui/form"
@@ -316,8 +317,53 @@ function ImagesTab({ theater, theaterId, onSaved }) {
 
 // ─── Tab: T&C ──────────────────────────────────────────────────────────────────
 
+function HistoryEntry({ entry }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="border border-border rounded-lg overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/40 transition-colors"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <Badge variant="outline" className="shrink-0">v{entry.version}</Badge>
+          <div className="flex flex-col gap-0.5 min-w-0">
+            {entry.publishedAt && (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Clock className="h-3 w-3 shrink-0" />
+                {format(new Date(entry.publishedAt), "dd MMM yyyy, HH:mm")}
+              </span>
+            )}
+            {entry.publishedBy && (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground truncate">
+                <User className="h-3 w-3 shrink-0" />
+                {entry.publishedBy}
+              </span>
+            )}
+          </div>
+        </div>
+        {open
+          ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
+          : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+        }
+      </button>
+      {open && entry.body && (
+        <>
+          <Separator />
+          <div
+            className="rich-editor-content px-4 py-3 text-xs text-muted-foreground max-h-64 overflow-y-auto bg-muted/20"
+            dangerouslySetInnerHTML={{ __html: entry.body }}
+          />
+        </>
+      )}
+    </div>
+  )
+}
+
 function TnCTab({ theater, theaterId, onSaved }) {
   const tnc = theater?.details?.tnc ?? {}
+  const history = [...(tnc.history ?? [])].reverse()
 
   const [title,         setTitle]        = useState(tnc.title ?? "")
   const [body,          setBody]          = useState(tnc.body ?? "")
@@ -331,8 +377,8 @@ function TnCTab({ theater, theaterId, onSaved }) {
   }, [theater])
 
   const draftPayload = {
-    ...(title         ? { title }                               : {}),
-    ...(body          ? { body }                                : {}),
+    ...(title         ? { title }                                   : {}),
+    ...(body          ? { body }                                    : {}),
     ...(effectiveFrom ? { effectiveFrom: toAPIDate(effectiveFrom) } : {}),
   }
   const canSaveDraft = Object.keys(draftPayload).length > 0
@@ -350,60 +396,109 @@ function TnCTab({ theater, theaterId, onSaved }) {
   })
 
   return (
-    <div className="space-y-4 max-w-2xl">
-      <div className="flex flex-wrap items-center gap-3">
-        <Badge variant="outline">v{tnc.version ?? 1}</Badge>
-        <Badge variant={tnc.status === "published" ? "default" : "secondary"} className="capitalize">
-          {tnc.status ?? "draft"}
-        </Badge>
-        {tnc.effectiveFrom && (
-          <span className="text-sm text-muted-foreground">
-            Effective: {format(new Date(tnc.effectiveFrom), "dd MMM yyyy")}
-          </span>
+    <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+      {/* ── Editor ── */}
+      <div className="xl:col-span-2 space-y-5">
+        {/* Status row */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline" className="font-mono">v{tnc.version ?? 1}</Badge>
+          <Badge
+            variant={tnc.status === "published" ? "default" : "secondary"}
+            className="capitalize"
+          >
+            {tnc.status ?? "draft"}
+          </Badge>
+          {tnc.effectiveFrom && (
+            <span className="text-xs text-muted-foreground">
+              Effective: {format(new Date(tnc.effectiveFrom), "dd MMM yyyy")}
+            </span>
+          )}
+        </div>
+
+        {/* Title */}
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium text-muted-foreground">Title</Label>
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. Booking Terms &amp; Conditions"
+          />
+        </div>
+
+        {/* Effective from */}
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium text-muted-foreground">Effective From (optional)</Label>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={cn("w-full sm:w-56 justify-start text-left font-normal", !effectiveFrom && "text-muted-foreground")}
+              >
+                {effectiveFrom ? format(effectiveFrom, "dd MMM yyyy") : "Pick a date"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0">
+              <Calendar mode="single" selected={effectiveFrom} onSelect={setEffectiveFrom} initialFocus />
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        {/* Rich text editor */}
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium text-muted-foreground">Content</Label>
+          <RichTextEditor
+            content={body}
+            onChange={setBody}
+            placeholder="Write the terms and conditions here…"
+            minHeight={320}
+          />
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-3 pt-1">
+          <Button
+            variant="outline"
+            onClick={() => draftMutation.mutate()}
+            disabled={draftMutation.isPending || !canSaveDraft}
+            title={!canSaveDraft ? "Add title or content to save" : undefined}
+          >
+            {draftMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save Draft
+          </Button>
+          <Button
+            onClick={() => setPublishOpen(true)}
+            disabled={!body}
+            title={!body ? "Add content before publishing" : undefined}
+            className="bg-nfdc-primary hover:bg-nfdc-primary/90"
+          >
+            Publish
+          </Button>
+        </div>
+      </div>
+
+      {/* ── Version History ── */}
+      <div className="space-y-4">
+        <div>
+          <h4 className="text-sm font-semibold">Version History</h4>
+          <p className="text-xs text-muted-foreground mt-0.5">Previously published versions</p>
+        </div>
+
+        {history.length === 0 ? (
+          <div className="border border-dashed border-border rounded-lg px-4 py-8 text-center">
+            <Clock className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">No published versions yet.</p>
+            <p className="text-xs text-muted-foreground mt-1">History appears here after publishing.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {history.map((entry) => (
+              <HistoryEntry key={entry.version} entry={entry} />
+            ))}
+          </div>
         )}
       </div>
 
-      <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">Title</Label>
-        <Input value={title} onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g. Booking Terms & Conditions" />
-      </div>
-
-      <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">Effective From (optional)</Label>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" className={cn("w-full sm:w-56 justify-start text-left font-normal",
-              !effectiveFrom && "text-muted-foreground")}>
-              {effectiveFrom ? format(effectiveFrom, "dd MMM yyyy") : "Pick a date"}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0">
-            <Calendar mode="single" selected={effectiveFrom} onSelect={setEffectiveFrom} initialFocus />
-          </PopoverContent>
-        </Popover>
-      </div>
-
-      <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">Content</Label>
-        <Textarea value={body} onChange={(e) => setBody(e.target.value)}
-          placeholder="Enter terms and conditions..." rows={14} className="font-mono text-sm" />
-      </div>
-
-      <div className="flex gap-3">
-        <Button variant="outline" onClick={() => draftMutation.mutate()}
-          disabled={draftMutation.isPending || !canSaveDraft}
-          title={!canSaveDraft ? "Add title or content to save" : undefined}>
-          {draftMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Save Draft
-        </Button>
-        <Button onClick={() => setPublishOpen(true)} disabled={!body}
-          title={!body ? "Add content before publishing" : undefined}
-          className="bg-nfdc-primary hover:bg-nfdc-primary/90">
-          Publish
-        </Button>
-      </div>
-
+      {/* Publish confirm */}
       <AlertDialog open={publishOpen} onOpenChange={setPublishOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -414,8 +509,11 @@ function TnCTab({ theater, theaterId, onSaved }) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => publishMutation.mutate()} disabled={publishMutation.isPending}
-              className="bg-nfdc-primary hover:bg-nfdc-primary/90">
+            <AlertDialogAction
+              onClick={() => publishMutation.mutate()}
+              disabled={publishMutation.isPending}
+              className="bg-nfdc-primary hover:bg-nfdc-primary/90"
+            >
               {publishMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Publish
             </AlertDialogAction>

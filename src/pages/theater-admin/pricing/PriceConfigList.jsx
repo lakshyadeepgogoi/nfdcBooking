@@ -4,16 +4,17 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  Plus, Pencil, Loader2, Trash2, MoreHorizontal, Settings2, Power,
+  Plus, Pencil, Loader2, Trash2, MoreHorizontal, Settings2, Power, AlertTriangle, Info,
+  Building2, Layers, Ban, CalendarClock,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
@@ -39,6 +40,7 @@ import StatusBadge from "@/components/common/StatusBadge"
 import FormInput from "@/components/forms/FormInput"
 import { useAuth } from "@/hooks/useAuth"
 import { listAudis } from "@/api/audi"
+import { listSlots } from "@/api/slots"
 import { listServicesGrouped } from "@/api/services"
 import {
   listPriceConfigs, createPriceConfig, updatePriceConfig, updatePriceConfigStatus,
@@ -50,7 +52,7 @@ import { formatINR } from "@/utils/formatCurrency"
 const TABS = ["audi", "service", "cancellation", "postponement"]
 
 const PRICING_TYPES_BY_ENTITY = {
-  audi:         ["hourly_table", "shift_based", "flat"],
+  audi:         ["hourly_table"],  // flat/shift_based are ignored by the fee calculator for audis
   service:      ["flat"],
   cancellation: ["charge_policy"],
   postponement: ["charge_policy"],
@@ -122,7 +124,6 @@ const formZ = z.object({
 // ─── Form helpers ──────────────────────────────────────────────────────────────
 
 const EMPTY_HOURLY = { hours: "", price: { govt: "", nonGovt: "" }, securityDeposit: { applicable: false, refundable: true }, isActive: true }
-const EMPTY_SHIFT  = { name: "", startTime: "09:00", endTime: "18:00", price: { govt: "", nonGovt: "" }, isActive: true }
 const EMPTY_SLAB   = { label: "", daysFrom: "", daysTo: "", percentage: "", minimumCharge: "" }
 
 function pcToForm(pc) {
@@ -137,7 +138,7 @@ function pcToForm(pc) {
           isActive: r.isActive ?? true,
           securityDeposit: r.securityDeposit ?? { applicable: false, refundable: true },
         }))
-      : [{ ...EMPTY_HOURLY }],
+      : [],
     shifts: c.shifts?.length
       ? c.shifts.map(s => ({
           name:      s.name ?? "",
@@ -146,7 +147,7 @@ function pcToForm(pc) {
           price:     { govt: s.price?.govt ?? "", nonGovt: s.price?.nonGovt ?? "" },
           isActive:  s.isActive ?? true,
         }))
-      : [{ ...EMPTY_SHIFT }],
+      : [],
     flatGovt:    c.flatRate?.price?.govt    ?? "",
     flatNonGovt: c.flatRate?.price?.nonGovt ?? "",
     chargeSlabs: c.chargeSlabs?.length
@@ -165,8 +166,8 @@ function emptyForm(entityType, entityId = "") {
   return {
     entityId,
     pricingType: DEFAULT_PRICING_TYPE[entityType] ?? "flat",
-    hourlyRates: [{ ...EMPTY_HOURLY }],
-    shifts:      [{ ...EMPTY_SHIFT }],
+    hourlyRates: [],   // start empty — hidden rows with invalid values block submission silently
+    shifts:      [],   // same reason
     flatGovt:    "",
     flatNonGovt: "",
     chargeSlabs: [{ ...EMPTY_SLAB }],
@@ -281,9 +282,12 @@ function ConfigSummary({ config }) {
   }
 
   if (pricingType === "charge_policy") {
+    if (!config.chargeSlabs?.length) {
+      return <p className="text-sm text-muted-foreground">No charge slabs configured</p>
+    }
     return (
       <div className="space-y-1 text-sm">
-        {config.chargeSlabs?.map((s, i) => (
+        {config.chargeSlabs.map((s, i) => (
           <div key={i} className="flex items-center justify-between py-0.5">
             <span className="text-muted-foreground">
               {s.label ? `${s.label}: ` : ""}
@@ -302,20 +306,221 @@ function ConfigSummary({ config }) {
   return null
 }
 
+// ─── Audi Info Panel ───────────────────────────────────────────────────────────
+
+function AudiInfoPanel({ audi, existingActiveConfig, audiSlots = [] }) {
+  if (!audi) return null
+  const cfg       = audi.config ?? {}
+  const mode      = cfg.slotMode
+  const capacity  = cfg.capacity
+  const durations = cfg.bookingDurations ?? []
+
+  const toMins = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m }
+  const slotDurations = audiSlots
+    .filter(s => s.config?.startTime && s.config?.endTime)
+    .map(s => {
+      const diff = toMins(s.config.endTime) - toMins(s.config.startTime)
+      // handle overnight slots
+      const mins = diff < 0 ? diff + 24 * 60 : diff
+      const hrs  = Math.round((mins / 60) * 10) / 10
+      return { name: s.name, start: s.config.startTime, end: s.config.endTime, hours: hrs }
+    })
+
+  return (
+    <div className="rounded-lg border bg-muted/30 p-3 space-y-2 text-sm">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Info className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <span className="text-xs font-medium text-muted-foreground">Audi Details</span>
+        {mode && (
+          <Badge variant="secondary" className="text-xs capitalize">{mode}</Badge>
+        )}
+        {capacity && (
+          <span className="text-xs text-muted-foreground">{capacity} seats</span>
+        )}
+      </div>
+
+      {/* Flexible mode */}
+      {mode === "flexible" && durations.length > 0 && (
+        <div className="text-xs space-y-0.5">
+          <span className="text-muted-foreground">Booking durations: </span>
+          <span className="font-medium">{durations.map(d => `${d}h`).join(", ")}</span>
+          <p className="text-muted-foreground">
+            Use <strong>Hourly Table</strong> and add one rate entry per duration above — the system matches bookings by hours to look up the price.
+          </p>
+        </div>
+      )}
+      {mode === "flexible" && durations.length === 0 && (
+        <div className="flex items-start gap-1.5 text-xs text-amber-600">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>No booking durations set on this audi. Go to Audi Rules and add them first, then create the price config.</span>
+        </div>
+      )}
+
+      {/* Fixed mode — show slot durations so admin knows exactly which hours to add */}
+      {mode === "fixed" && slotDurations.length > 0 && (
+        <div className="text-xs space-y-1.5">
+          <p className="text-muted-foreground">
+            Your active slots — add these exact durations to the <strong>Hourly Table</strong>:
+          </p>
+          <div className="space-y-1">
+            {slotDurations.map(s => (
+              <div key={s.name} className="flex items-center gap-2">
+                <Badge variant="outline" className="text-[10px] px-1.5 shrink-0">{s.hours}h</Badge>
+                <span className="font-medium">{s.name}</span>
+                <span className="text-muted-foreground ml-auto shrink-0">{s.start}–{s.end}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-muted-foreground">
+            Unique durations needed: <strong>{[...new Set(slotDurations.map(s => `${s.hours}h`))].join(", ")}</strong>.
+            If a slot's duration has no matching rate, it falls back to slot's own pricing.
+          </p>
+        </div>
+      )}
+      {mode === "fixed" && slotDurations.length === 0 && (
+        <p className="text-xs text-muted-foreground">
+          No active slots found. Go to <strong>Slots</strong> page and add time windows first — the slot durations will pre-fill the <strong>Hourly Table</strong> rates automatically.
+        </p>
+      )}
+
+      {existingActiveConfig && (
+        <div className="flex items-start gap-1.5 text-xs text-destructive">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>
+            An active price config already exists for this audi (<span className="font-mono">{existingActiveConfig.priceConfigId}</span>).
+            Creating another will be rejected — edit or deactivate the existing one first.
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Price Config Dialog ────────────────────────────────────────────────────────
 
-function PriceConfigDialog({ open, onOpenChange, entityType, entityOptions, editingConfig }) {
+function PriceConfigDialog({ open, onOpenChange, entityType, entityOptions, editingConfig, audiDataMap, existingConfigs }) {
   const queryClient = useQueryClient()
+  const [autoPopulatedFor, setAutoPopulatedFor] = useState(null)
 
   const form = useForm({
     resolver: zodResolver(formZ),
     defaultValues: editingConfig ? pcToForm(editingConfig) : emptyForm(entityType),
   })
 
-  const pricingType = form.watch("pricingType")
+  const pricingType    = form.watch("pricingType")
+  const selectedEntity = form.watch("entityId")
+
+  // Derive selected audi details + duplicate-config warning
+  const selectedAudi = entityType === "audi" && audiDataMap
+    ? audiDataMap.get(selectedEntity)
+    : null
+
+  const existingActiveConfig = entityType === "audi" && existingConfigs && selectedEntity
+    ? existingConfigs.find(
+        c => c.relationships?.entityId === selectedEntity &&
+             c.lifecycle?.status === "active" &&
+             (!editingConfig || c.priceConfigId !== editingConfig.priceConfigId)
+      ) ?? null
+    : null
+
+  // Operational hours from the selected audi — used to constrain shift times
+  const audiMode = selectedAudi?.config?.slotMode
+  const opStart  = selectedAudi?.config?.operationalHours?.start ?? ""
+  const opEnd    = selectedAudi?.config?.operationalHours?.end   ?? ""
+
+  // Fetch active slots for fixed-mode audis — used to show duration hints in the info panel
+  const { data: slotsRaw } = useQuery({
+    queryKey: ["slots", selectedEntity],
+    queryFn: () => listSlots(selectedEntity).then(r => {
+      const raw = r.data.data
+      return Array.isArray(raw?.data) ? raw.data : Array.isArray(raw) ? raw : []
+    }),
+    enabled: entityType === "audi" && audiMode === "fixed" && !!selectedEntity,
+  })
+  const slotsArr  = Array.isArray(slotsRaw?.data) ? slotsRaw.data : Array.isArray(slotsRaw) ? slotsRaw : []
+  const audiSlots = slotsArr.filter(s => s.lifecycle?.status === "active")
+
+  // When a new audi is selected, auto-fill existing shift rows with its operational hours
+  useEffect(() => {
+    if (editingConfig) return
+    if (!opStart && !opEnd) return
+    if (form.getValues("pricingType") !== "shift_based") return
+    const shifts = form.getValues("shifts") ?? []
+    shifts.forEach((_, i) => {
+      if (opStart) form.setValue(`shifts.${i}.startTime`, opStart)
+      if (opEnd)   form.setValue(`shifts.${i}.endTime`,   opEnd)
+    })
+  }, [opStart, opEnd]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // If switching to a Fixed/Flexible audi narrows allowed types and the current
+  // pricingType is no longer valid (e.g. shift_based was selected first), reset it.
+  useEffect(() => {
+    if (editingConfig) return
+    const current = form.getValues("pricingType")
+    if (!allowedTypes.includes(current)) {
+      form.setValue("pricingType", allowedTypes[0] ?? "flat")
+    }
+  }, [audiMode]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-populate hourly rate rows when an audi is selected (new config only).
+  // Flexible: one row per bookingDuration. Fixed: one row per unique slot duration.
+  // Runs again when audiSlots arrives (async fetch) — guard with autoPopulatedFor
+  // so we don't overwrite the user's edits after they've typed in prices.
+  useEffect(() => {
+    if (editingConfig) return
+    if (entityType !== "audi") return
+    if (!selectedEntity) return
+    if (autoPopulatedFor === selectedEntity) return
+    if (form.getValues("pricingType") !== "hourly_table") return
+
+    if (audiMode === "flexible") {
+      const durations = selectedAudi?.config?.bookingDurations ?? []
+      if (durations.length > 0) {
+        hrReplace(durations.map(d => ({ ...EMPTY_HOURLY, hours: d })))
+        setAutoPopulatedFor(selectedEntity)
+      }
+    } else if (audiMode === "fixed") {
+      const toMins = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m }
+      const uniqueHours = [...new Set(
+        audiSlots
+          .filter(s => s.config?.startTime && s.config?.endTime)
+          .map(s => {
+            const diff = toMins(s.config.endTime) - toMins(s.config.startTime)
+            const mins = diff < 0 ? diff + 24 * 60 : diff
+            return Math.round((mins / 60) * 10) / 10
+          })
+      )].sort((a, b) => a - b)
+      if (uniqueHours.length > 0) {
+        hrReplace(uniqueHours.map(h => ({ ...EMPTY_HOURLY, hours: h })))
+        setAutoPopulatedFor(selectedEntity)
+      }
+    }
+  }, [selectedEntity, audiSlots, audiMode]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSubmit = (values) => {
+    if (values.pricingType === "shift_based" && (opStart || opEnd)) {
+      let hasError = false
+      values.shifts?.forEach((s, i) => {
+        if (opStart && s.startTime < opStart) {
+          form.setError(`shifts.${i}.startTime`, { message: `Must be ${opStart} or later` })
+          hasError = true
+        }
+        if (opEnd && s.endTime > opEnd) {
+          form.setError(`shifts.${i}.endTime`, { message: `Must be ${opEnd} or earlier` })
+          hasError = true
+        }
+        if (s.startTime >= s.endTime) {
+          form.setError(`shifts.${i}.endTime`, { message: "End time must be after start time" })
+          hasError = true
+        }
+      })
+      if (hasError) return
+    }
+    mutation.mutate(values)
+  }
 
   const {
-    fields: hrFields, append: hrAppend, remove: hrRemove,
+    fields: hrFields, append: hrAppend, remove: hrRemove, replace: hrReplace,
   } = useFieldArray({ control: form.control, name: "hourlyRates" })
 
   const {
@@ -328,6 +533,7 @@ function PriceConfigDialog({ open, onOpenChange, entityType, entityOptions, edit
 
   useEffect(() => {
     if (!open) return
+    setAutoPopulatedFor(null)
     form.reset(editingConfig ? pcToForm(editingConfig) : emptyForm(entityType))
   }, [open, editingConfig, entityType, form])
 
@@ -347,7 +553,14 @@ function PriceConfigDialog({ open, onOpenChange, entityType, entityOptions, edit
     onError: (err) => toast.error(err?.response?.data?.message ?? "Something went wrong."),
   })
 
-  const allowedTypes = PRICING_TYPES_BY_ENTITY[entityType] ?? []
+  // Only hourly_table is valid for audi: flat/shift_based are silently ignored by the
+  // fee calculator (resolveHourlyRate only handles pricingType === 'hourly_table').
+  // When editing an existing config with a legacy type, keep that type available so
+  // the admin can still view and update it.
+  const baseAllowed = PRICING_TYPES_BY_ENTITY[entityType] ?? []
+  const allowedTypes = editingConfig && !baseAllowed.includes(editingConfig.config?.pricingType)
+    ? [...baseAllowed, editingConfig.config.pricingType]
+    : baseAllowed
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -365,7 +578,7 @@ function PriceConfigDialog({ open, onOpenChange, entityType, entityOptions, edit
           <Form {...form}>
             <form
               id="price-config-form"
-              onSubmit={form.handleSubmit(v => mutation.mutate(v))}
+              onSubmit={form.handleSubmit(handleSubmit)}
               className="space-y-5 py-2"
             >
               {/* Entity + Pricing type */}
@@ -407,7 +620,11 @@ function PriceConfigDialog({ open, onOpenChange, entityType, entityOptions, edit
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Pricing Type</FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        disabled={allowedTypes.length === 1}
+                      >
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue />
@@ -424,6 +641,15 @@ function PriceConfigDialog({ open, onOpenChange, entityType, entityOptions, edit
                   )}
                 />
               </div>
+
+              {/* Audi info panel — shown when an audi is selected */}
+              {entityType === "audi" && selectedEntity && (
+                <AudiInfoPanel
+                  audi={selectedAudi}
+                  existingActiveConfig={existingActiveConfig}
+                  audiSlots={audiSlots}
+                />
+              )}
 
               <Separator />
 
@@ -577,9 +803,21 @@ function PriceConfigDialog({ open, onOpenChange, entityType, entityOptions, edit
               {pricingType === "shift_based" && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold">Shifts</p>
+                    <div>
+                      <p className="text-sm font-semibold">Shifts</p>
+                      {(opStart || opEnd) && (
+                        <p className="text-xs text-muted-foreground">
+                          Allowed window: {opStart || "—"} – {opEnd || "—"}
+                        </p>
+                      )}
+                    </div>
                     <Button type="button" size="sm" variant="outline"
-                      onClick={() => shiftAppend({ ...EMPTY_SHIFT })}>
+                      onClick={() => shiftAppend({
+                        name: "", isActive: true,
+                        startTime: opStart || "09:00",
+                        endTime:   opEnd   || "18:00",
+                        price: { govt: "", nonGovt: "" },
+                      })}>
                       <Plus className="mr-1 h-3.5 w-3.5" /> Add Shift
                     </Button>
                   </div>
@@ -593,17 +831,41 @@ function PriceConfigDialog({ open, onOpenChange, entityType, entityOptions, edit
                           label="Shift Name"
                           placeholder="Morning"
                         />
-                        <FormInput
+                        <FormField
                           control={form.control}
                           name={`shifts.${i}.startTime`}
-                          label="Start Time"
-                          placeholder="09:00"
+                          render={({ field: f }) => (
+                            <FormItem>
+                              <FormLabel>Start Time</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="time"
+                                  min={opStart || undefined}
+                                  max={opEnd || undefined}
+                                  {...f}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
                         />
-                        <FormInput
+                        <FormField
                           control={form.control}
                           name={`shifts.${i}.endTime`}
-                          label="End Time"
-                          placeholder="18:00"
+                          render={({ field: f }) => (
+                            <FormItem>
+                              <FormLabel>End Time</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="time"
+                                  min={opStart || undefined}
+                                  max={opEnd || undefined}
+                                  {...f}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
                         />
                         <FormInput
                           control={form.control}
@@ -671,7 +933,7 @@ function PriceConfigDialog({ open, onOpenChange, entityType, entityOptions, edit
               )}
 
               {/* ── Charge Policy ── */}
-              {pricingType === "charge_policy" && (
+              {(pricingType === "charge_policy" || entityType === "cancellation" || entityType === "postponement") && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
@@ -871,21 +1133,27 @@ export default function PriceConfigList() {
   const [editingConfig,  setEditingConfig]  = useState(null)
   const [statusTarget,   setStatusTarget]   = useState(null)
 
-  // ── Audis ──
+  // ── Audis — always fresh so newly created audis appear in entity selectors ──
   const { data: audisRaw } = useQuery({
     queryKey: ["audis", theaterId],
     queryFn: () => listAudis(theaterId).then(r => r.data.data),
     enabled: !!theaterId,
+    staleTime: 0,
+    refetchOnMount: "always",
   })
-  const allAudis = Array.isArray(audisRaw?.data) ? audisRaw.data : []
+  const allAudis    = Array.isArray(audisRaw?.data) ? audisRaw.data : []
   const audiOptions = allAudis.map(a => ({ id: a.audiId ?? a.id ?? a._id, name: a.name }))
-  const audiMap = new Map(audiOptions.map(a => [a.id, a.name]))
+  const audiMap     = new Map(audiOptions.map(a => [a.id, a.name]))
+  // Full audi objects keyed by audiId — passed into the dialog for the info panel
+  const audiDataMap = new Map(allAudis.map(a => [a.audiId ?? a.id ?? a._id, a]))
 
   // ── Services (for service tab entity selector) ──
   const { data: groupedRaw } = useQuery({
     queryKey: ["services", JSON.stringify({ theaterId })],
     queryFn: () => listServicesGrouped({ theaterId }).then(r => r.data.data),
     enabled: !!theaterId && activeTab === "service",
+    staleTime: 0,
+    refetchOnMount: "always",
   })
   const allServices = [
     ...(groupedRaw?.sections?.flatMap(s => s.services) ?? []),
@@ -944,31 +1212,55 @@ export default function PriceConfigList() {
       />
 
       <Tabs value={activeTab} onValueChange={v => { setActiveTab(v); setEditingConfig(null) }}>
-        <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="audi"         className="flex-1 sm:flex-none">Audi</TabsTrigger>
-          <TabsTrigger value="service"      className="flex-1 sm:flex-none">Service</TabsTrigger>
-          <TabsTrigger value="cancellation" className="flex-1 sm:flex-none">
-            <span className="hidden sm:inline">Cancellation</span>
-            <span className="sm:hidden">Cancel</span>
-          </TabsTrigger>
-          <TabsTrigger value="postponement" className="flex-1 sm:flex-none">
-            <span className="hidden sm:inline">Postponement</span>
-            <span className="sm:hidden">Postpone</span>
-          </TabsTrigger>
-        </TabsList>
+        <div className="flex gap-6 items-start">
+          {/* Sidebar nav */}
+          <TabsList className="flex-col h-auto w-52 shrink-0 rounded-xl border border-border bg-card p-2 gap-0.5 justify-start items-stretch shadow-sm">
+            <TabsTrigger
+              value="audi"
+              className="justify-start gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground w-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm hover:bg-muted hover:text-foreground data-[state=active]:hover:bg-primary transition-colors"
+            >
+              <Building2 className="h-4 w-4 shrink-0" />
+              Audi
+            </TabsTrigger>
+            <TabsTrigger
+              value="service"
+              className="justify-start gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground w-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm hover:bg-muted hover:text-foreground data-[state=active]:hover:bg-primary transition-colors"
+            >
+              <Layers className="h-4 w-4 shrink-0" />
+              Service
+            </TabsTrigger>
+            <TabsTrigger
+              value="cancellation"
+              className="justify-start gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground w-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm hover:bg-muted hover:text-foreground data-[state=active]:hover:bg-primary transition-colors"
+            >
+              <Ban className="h-4 w-4 shrink-0" />
+              Cancellation
+            </TabsTrigger>
+            <TabsTrigger
+              value="postponement"
+              className="justify-start gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground w-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm hover:bg-muted hover:text-foreground data-[state=active]:hover:bg-primary transition-colors"
+            >
+              <CalendarClock className="h-4 w-4 shrink-0" />
+              Postponement
+            </TabsTrigger>
+          </TabsList>
 
-        {TABS.map(tab => (
-          <TabsContent key={tab} value={tab} className="mt-4">
-            <TabPane
-              entityType={tab}
-              entityOptions={entityOptionsForTab(tab)}
-              entityMap={entityMapForTab(tab)}
-              onAdd={openCreate}
-              onEdit={openEdit}
-              onToggleStatus={handleToggleStatus}
-            />
-          </TabsContent>
-        ))}
+          {/* Content area */}
+          <div className="flex-1 min-w-0">
+            {TABS.map(tab => (
+              <TabsContent key={tab} value={tab} className="mt-0">
+                <TabPane
+                  entityType={tab}
+                  entityOptions={entityOptionsForTab(tab)}
+                  entityMap={entityMapForTab(tab)}
+                  onAdd={openCreate}
+                  onEdit={openEdit}
+                  onToggleStatus={handleToggleStatus}
+                />
+              </TabsContent>
+            ))}
+          </div>
+        </div>
       </Tabs>
 
       {/* Create / Edit dialog */}
@@ -979,6 +1271,8 @@ export default function PriceConfigList() {
         entityType={editingConfig?.relationships?.entityType ?? activeTab}
         entityOptions={entityOptionsForTab(editingConfig?.relationships?.entityType ?? activeTab)}
         editingConfig={editingConfig}
+        audiDataMap={audiDataMap}
+        existingConfigs={queryClient.getQueryData(["price-configs", editingConfig?.relationships?.entityType ?? activeTab]) ?? []}
       />
 
       {/* Status confirm dialog */}

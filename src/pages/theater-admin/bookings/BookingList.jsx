@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { Plus, Eye, ChevronLeft, ChevronRight } from "lucide-react"
+import { Plus, Eye } from "lucide-react"
 import { pick } from "@/utils/pick"
 import RoleGuard from "@/components/common/RoleGuard"
 import { PERMISSIONS } from "@/auth/permissions"
@@ -12,7 +12,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Badge } from "@/components/ui/badge"
 import PageHeader from "@/components/common/PageHeader"
 import DataTable from "@/components/common/DataTable"
 import StatusBadge from "@/components/common/StatusBadge"
@@ -20,12 +19,12 @@ import { useAuth } from "@/hooks/useAuth"
 import { listBookings } from "@/api/bookings"
 import { listAudis } from "@/api/audi"
 import { parseList } from "@/utils/parseList"
-import { formatDate, formatTime } from "@/utils/formatDate"
+import { formatDate } from "@/utils/formatDate"
 import { formatINR } from "@/utils/formatCurrency"
 import { BOOKING_STATUS } from "@/utils/constants"
 import { cn } from "@/lib/utils"
 
-const DEFAULT_FILTERS = { from: null, to: null, status: "", audiId: "", page: 1, pageSize: 10 }
+const DEFAULT_FILTERS = { date: null, status: "", bookingType: "", audiId: "", page: 1, limit: 10 }
 
 function DatePicker({ label, value, onChange }) {
   return (
@@ -64,11 +63,12 @@ export default function BookingList() {
   const { data: raw, isLoading } = useQuery({
     queryKey: ["bookings", appliedFilters],
     queryFn: () => listBookings({
-      ...appliedFilters,
-      from: appliedFilters.from ? format(appliedFilters.from, "yyyy-MM-dd") : undefined,
-      to: appliedFilters.to ? format(appliedFilters.to, "yyyy-MM-dd") : undefined,
-      status: appliedFilters.status || undefined,
-      audiId: appliedFilters.audiId || undefined,
+      page:        appliedFilters.page,
+      limit:       appliedFilters.limit,
+      date:        appliedFilters.date ? format(appliedFilters.date, "yyyy-MM-dd") : undefined,
+      status:      appliedFilters.status      || undefined,
+      bookingType: appliedFilters.bookingType || undefined,
+      audiId:      appliedFilters.audiId      || undefined,
     }).then(r => r.data.data),
   })
 
@@ -77,53 +77,59 @@ export default function BookingList() {
 
   const columns = [
     {
-      accessorKey: "id",
+      id: "bookingId",
       header: "Booking ID",
-      cell: ({ getValue }) => (
+      cell: ({ row }) => (
         <span className="font-mono text-xs text-muted-foreground">
-          {String(getValue()).slice(0, 12)}...
+          {String(row.original.bookingId ?? "").slice(0, 12)}...
         </span>
       ),
     },
     {
       id: "customer",
       header: "Customer",
-      cell: ({ row }) => pick(row.original.user?.name, row.original.customerName, row.original.user),
+      cell: ({ row }) => {
+        const b = row.original
+        return pick(b.relationships?.userName, b.user?.name, b.customerName) ?? "—"
+      },
     },
     {
       id: "audi",
       header: "Audi",
-      cell: ({ row }) => pick(row.original.audi?.name, row.original.audiName, row.original.audi),
+      cell: ({ row }) => {
+        const b = row.original
+        return pick(b.relationships?.audiName, b.audi?.name, b.audiName) ?? "—"
+      },
     },
     {
-      accessorKey: "date",
+      id: "date",
       header: "Date",
-      cell: ({ getValue }) => formatDate(getValue()),
+      cell: ({ row }) => formatDate(row.original.bookingDetails?.date),
     },
     {
       id: "time",
       header: "Time",
       cell: ({ row }) => {
-        const s = row.original.startTime
-        const e = row.original.endTime
+        const s = row.original.bookingDetails?.startTime
+        const e = row.original.bookingDetails?.endTime
         return s && e ? `${s}–${e}` : "—"
       },
     },
     {
       id: "amount",
       header: "Amount",
-      cell: ({ row }) => formatINR(row.original.totalAmount ?? row.original.amount ?? 0),
+      cell: ({ row }) => formatINR(row.original.pricing?.totalAmount ?? row.original.totalAmount ?? 0),
     },
     {
-      accessorKey: "status",
+      id: "status",
       header: "Status",
-      cell: ({ getValue }) => <StatusBadge status={getValue()} />,
+      cell: ({ row }) => <StatusBadge status={row.original.lifecycle?.status ?? row.original.status} />,
     },
     {
       id: "actions",
       header: "",
       cell: ({ row }) => {
-        const id = row.original.id ?? row.original._id ?? row.original.bookingId
+        const id = row.original.bookingId ?? row.original.id ?? row.original._id
         return (
           <TooltipProvider>
             <Tooltip>
@@ -163,19 +169,14 @@ export default function BookingList() {
         <CardContent className="p-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <DatePicker
-              label="From"
-              value={filterValues.from}
-              onChange={(d) => setFilterValues(v => ({ ...v, from: d }))}
-            />
-            <DatePicker
-              label="To"
-              value={filterValues.to}
-              onChange={(d) => setFilterValues(v => ({ ...v, to: d }))}
+              label="Date"
+              value={filterValues.date}
+              onChange={(d) => setFilterValues(v => ({ ...v, date: d }))}
             />
             <div className="space-y-1">
               <p className="text-xs text-muted-foreground">Status</p>
               <Select
-                value={filterValues.status}
+                value={filterValues.status || "all"}
                 onValueChange={(v) => setFilterValues(f => ({ ...f, status: v === "all" ? "" : v }))}
               >
                 <SelectTrigger className="h-9 text-sm">
@@ -190,9 +191,25 @@ export default function BookingList() {
               </Select>
             </div>
             <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">Booking Type</p>
+              <Select
+                value={filterValues.bookingType || "all"}
+                onValueChange={(v) => setFilterValues(f => ({ ...f, bookingType: v === "all" ? "" : v }))}
+              >
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue placeholder="All types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All types</SelectItem>
+                  <SelectItem value="govt">Govt</SelectItem>
+                  <SelectItem value="non-govt">Non-Govt</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
               <p className="text-xs text-muted-foreground">Audi</p>
               <Select
-                value={filterValues.audiId}
+                value={filterValues.audiId || "all"}
                 onValueChange={(v) => setFilterValues(f => ({ ...f, audiId: v === "all" ? "" : v }))}
               >
                 <SelectTrigger className="h-9 text-sm">
@@ -200,8 +217,8 @@ export default function BookingList() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All audis</SelectItem>
-                  {(audis ?? []).map(a => (
-                    <SelectItem key={a.id ?? a._id} value={a.id ?? a._id}>{a.name}</SelectItem>
+                  {(Array.isArray(audis?.data) ? audis.data : Array.isArray(audis) ? audis : []).map(a => (
+                    <SelectItem key={a.audiId ?? a.id ?? a._id} value={a.audiId ?? a.id ?? a._id}>{a.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -232,15 +249,15 @@ export default function BookingList() {
         isLoading={isLoading}
         emptyMessage="No bookings found"
         onRowClick={(row) => {
-          const id = row.original.id ?? row.original._id ?? row.original.bookingId
+          const id = row.original.bookingId ?? row.original.id ?? row.original._id
           navigate(`/admin/bookings/${id}`)
         }}
         pagination={{
           page: appliedFilters.page,
-          pageSize: appliedFilters.pageSize,
+          pageSize: appliedFilters.limit,
           total,
           onPageChange: (p) => setAppliedFilters(f => ({ ...f, page: p })),
-          onPageSizeChange: (ps) => setAppliedFilters(f => ({ ...f, pageSize: ps, page: 1 })),
+          onPageSizeChange: (ps) => setAppliedFilters(f => ({ ...f, limit: ps, page: 1 })),
         }}
       />
     </div>

@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Loader2, Plus, X, Upload, Image as ImageIcon } from "lucide-react"
+import { ArrowLeft, Loader2, Plus, X, Upload, Image as ImageIcon, CheckCircle2, Circle, ExternalLink, AlertTriangle } from "lucide-react"
 import { toast } from "sonner"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
@@ -24,6 +24,9 @@ import LoadingSpinner from "@/components/common/LoadingSpinner"
 import FormInput from "@/components/forms/FormInput"
 import FormTextarea from "@/components/forms/FormTextarea"
 import { getAudi, updateAudi, updateAudiStatus, uploadAudiImages } from "@/api/audi"
+import { listSlots } from "@/api/slots"
+import { listPriceConfigs } from "@/api/priceConfig"
+import { cn } from "@/lib/utils"
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -401,6 +404,168 @@ function ImagesTab({ audi, audiId, onSaved }) {
   )
 }
 
+// ─── Tab: Setup Checklist ─────────────────────────────────────────────────────
+
+function SetupTab({ audi, audiId }) {
+  const navigate = useNavigate()
+  const mode             = audi?.config?.slotMode
+  const bookingDurations = audi?.config?.bookingDurations ?? []
+
+  const { data: slotsRaw } = useQuery({
+    queryKey: ["slots", audiId],
+    queryFn: () => listSlots(audiId).then(r => {
+      const raw = r.data.data
+      return Array.isArray(raw?.data) ? raw.data : Array.isArray(raw) ? raw : []
+    }),
+    enabled: !!audiId && mode === "fixed",
+  })
+  const slotsArr  = Array.isArray(slotsRaw?.data) ? slotsRaw.data : Array.isArray(slotsRaw) ? slotsRaw : []
+  const activeSlots = slotsArr.filter(s => s.lifecycle?.status === "active")
+
+  const { data: audiPriceConfigs } = useQuery({
+    queryKey: ["price-configs", "audi", audiId],
+    queryFn: () => listPriceConfigs({ entityType: "audi" }).then(r => {
+      const raw = r.data.data
+      return (Array.isArray(raw) ? raw : []).filter(pc => pc.relationships?.entityId === audiId)
+    }),
+    enabled: !!audiId,
+  })
+
+  const { data: cancelConfigs } = useQuery({
+    queryKey: ["price-configs", "cancellation", audiId],
+    queryFn: () => listPriceConfigs({ entityType: "cancellation" }).then(r => {
+      const raw = r.data.data
+      return (Array.isArray(raw) ? raw : []).filter(pc => pc.relationships?.entityId === audiId)
+    }),
+    enabled: !!audiId,
+  })
+
+  const { data: postponeConfigs } = useQuery({
+    queryKey: ["price-configs", "postponement", audiId],
+    queryFn: () => listPriceConfigs({ entityType: "postponement" }).then(r => {
+      const raw = r.data.data
+      return (Array.isArray(raw) ? raw : []).filter(pc => pc.relationships?.entityId === audiId)
+    }),
+    enabled: !!audiId,
+  })
+
+  const hasAudiPriceConfig = (audiPriceConfigs ?? []).some(pc => pc.lifecycle?.status === "active")
+  const hasCancelConfig    = (cancelConfigs    ?? []).some(pc => pc.lifecycle?.status === "active")
+  const hasPostponeConfig  = (postponeConfigs  ?? []).some(pc => pc.lifecycle?.status === "active")
+
+  const items = [
+    mode === "fixed" && {
+      label:     "Time Slots",
+      desc:      activeSlots.length > 0
+        ? `${activeSlots.length} active slot${activeSlots.length !== 1 ? "s" : ""} — ${activeSlots.map(s => s.name).join(", ")}`
+        : "No active slots — add time windows so users can book this audi",
+      done:      activeSlots.length > 0,
+      link:      "/admin/slots",
+      linkLabel: "Manage Slots",
+      optional:  false,
+    },
+    mode === "flexible" && {
+      label:     "Booking Durations",
+      desc:      bookingDurations.length > 0
+        ? `${bookingDurations.map(d => `${d}h`).join(", ")} — set in Booking Rules`
+        : "No booking durations set — go to the Booking Rules tab and add valid durations",
+      done:      bookingDurations.length > 0,
+      link:      null,
+      linkLabel: null,
+      optional:  false,
+    },
+    {
+      label:     "Price Config (Hourly Table)",
+      desc:      hasAudiPriceConfig
+        ? "Active pricing configured"
+        : "No active price config — without this, bookings cannot be priced",
+      done:      hasAudiPriceConfig,
+      link:      "/admin/pricing",
+      linkLabel: "Manage Price Config",
+      optional:  false,
+    },
+    {
+      label:     "Cancellation Policy",
+      desc:      hasCancelConfig
+        ? "Active cancellation policy configured"
+        : "No cancellation policy — bookings will have no cancellation charges",
+      done:      hasCancelConfig,
+      link:      "/admin/pricing",
+      linkLabel: "Manage Price Config",
+      optional:  false,
+    },
+    {
+      label:     "Postponement Policy",
+      desc:      hasPostponeConfig
+        ? "Active postponement policy configured"
+        : "No postponement policy configured",
+      done:      hasPostponeConfig,
+      link:      "/admin/pricing",
+      linkLabel: "Manage Price Config",
+      optional:  true,
+    },
+  ].filter(Boolean)
+
+  const required          = items.filter(i => !i.optional)
+  const completedRequired = required.filter(i => i.done).length
+  const allDone           = completedRequired === required.length
+
+  return (
+    <div className="space-y-5 max-w-lg">
+      <div className="flex items-center gap-3">
+        <p className="text-sm text-muted-foreground">
+          {completedRequired} of {required.length} required steps complete
+        </p>
+        {allDone && (
+          <Badge variant="secondary" className="text-green-700 bg-green-100">
+            <CheckCircle2 className="h-3 w-3 mr-1" /> All set
+          </Badge>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        {items.map((item, i) => (
+          <div key={i} className={cn(
+            "flex items-start gap-3 rounded-lg border p-3",
+            item.done    ? "border-green-200 bg-green-50/40"
+            : item.optional ? "border-dashed bg-muted/20"
+            : "border-amber-200 bg-amber-50/30"
+          )}>
+            {item.done
+              ? <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />
+              : <Circle className={cn("h-4 w-4 shrink-0 mt-0.5", item.optional ? "text-muted-foreground" : "text-amber-500")} />
+            }
+            <div className="flex-1 min-w-0 space-y-0.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-medium">{item.label}</span>
+                {item.optional && (
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">Optional</Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">{item.desc}</p>
+            </div>
+            {item.link && (
+              <Button type="button" size="sm" variant="ghost"
+                className="h-7 shrink-0 text-xs px-2"
+                onClick={() => navigate(item.link)}>
+                {item.linkLabel}
+                <ExternalLink className="ml-1 h-3 w-3" />
+              </Button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {!mode && (
+        <div className="flex items-start gap-2 text-xs text-amber-600">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>Audi mode not detected. Recreate this audi if the mode appears missing.</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Page ──────────────────────────────────────────────────────────────────
 
 export default function AudiDetail() {
@@ -463,14 +628,19 @@ export default function AudiDetail() {
       </div>
 
       {/* Vertical tabs */}
-      <Tabs defaultValue="info" orientation="vertical" className="flex flex-col sm:flex-row gap-0">
+      <Tabs defaultValue="setup" orientation="vertical" className="flex flex-col sm:flex-row gap-0">
         <TabsList className="flex sm:flex-col h-auto w-full sm:w-44 shrink-0 bg-muted/50 border rounded-lg sm:rounded-r-none p-1 justify-start">
+          <TabsTrigger value="setup"  className="w-full justify-start text-left data-[state=active]:shadow-sm">Setup</TabsTrigger>
           <TabsTrigger value="info"   className="w-full justify-start text-left data-[state=active]:shadow-sm">Info</TabsTrigger>
           <TabsTrigger value="rules"  className="w-full justify-start text-left data-[state=active]:shadow-sm">Booking Rules</TabsTrigger>
           <TabsTrigger value="images" className="w-full justify-start text-left data-[state=active]:shadow-sm">Images</TabsTrigger>
         </TabsList>
 
         <div className="flex-1 border rounded-lg sm:rounded-l-none sm:border-l-0 bg-background">
+          <TabsContent value="setup" className="m-0 p-6">
+            <h3 className="text-base font-semibold mb-4">Setup Checklist</h3>
+            <SetupTab audi={audi} audiId={audiId} />
+          </TabsContent>
           <TabsContent value="info" className="m-0 p-6">
             <h3 className="text-base font-semibold mb-4">Basic Information</h3>
             <InfoTab audi={audi} audiId={audiId} onSaved={onSaved} />

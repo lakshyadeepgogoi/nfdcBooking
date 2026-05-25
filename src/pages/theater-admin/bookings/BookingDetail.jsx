@@ -1,16 +1,21 @@
 import { useEffect, useState } from "react"
-import { pick } from "@/utils/pick"
 import { useNavigate, useParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { ArrowLeft, Copy, Loader2 } from "lucide-react"
+import {
+  ArrowLeft, Copy, Loader2, User, Building2, Clapperboard,
+  CalendarDays, Clock, Tag, CreditCard, FileCheck, History,
+  CheckCircle2, XCircle, AlertCircle, Timer,
+} from "lucide-react"
 import RoleGuard from "@/components/common/RoleGuard"
 import { PERMISSIONS } from "@/auth/permissions"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -23,22 +28,62 @@ import { Form } from "@/components/ui/form"
 import PageHeader from "@/components/common/PageHeader"
 import StatusBadge from "@/components/common/StatusBadge"
 import FormInput from "@/components/forms/FormInput"
-import FormDatePicker from "@/components/forms/FormDatePicker"
 import {
   getBooking, updateBookingStatus, markDocsSubmitted, markDocsVerified,
   addOvertimeCharge, extendDeadline, refundDeposit,
 } from "@/api/bookings"
-import { formatDate, formatDateTime, toAPIDate } from "@/utils/formatDate"
+import { formatDate, formatDateTime } from "@/utils/formatDate"
 import { formatINR } from "@/utils/formatCurrency"
 
-function InfoRow({ label, value }) {
+// ─── helpers ──────────────────────────────────────────────────────────────────
+
+function duration(start, end) {
+  if (!start || !end) return null
+  const [sh, sm] = start.split(":").map(Number)
+  const [eh, em] = end.split(":").map(Number)
+  const mins = (eh * 60 + em) - (sh * 60 + sm)
+  if (mins <= 0) return null
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return m ? `${h}h ${m}m` : `${h}h`
+}
+
+function InfoItem({ icon: Icon, label, value }) {
   return (
-    <div className="space-y-0.5">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-sm font-medium">{value ?? "—"}</p>
+    <div className="flex items-start gap-3">
+      <div className="mt-0.5 h-8 w-8 rounded-md bg-muted flex items-center justify-center shrink-0">
+        <Icon className="h-4 w-4 text-muted-foreground" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="text-sm font-medium truncate">{value ?? "—"}</p>
+      </div>
     </div>
   )
 }
+
+function AmountRow({ label, value, bold, muted }) {
+  return (
+    <div className={`flex justify-between items-center py-1.5 ${bold ? "font-semibold" : ""} ${muted ? "text-muted-foreground text-xs" : "text-sm"}`}>
+      <span>{label}</span>
+      <span>{value}</span>
+    </div>
+  )
+}
+
+function StatusDot({ status }) {
+  const colors = {
+    confirmed: "bg-green-500", accepted: "bg-green-500",
+    pending: "bg-yellow-500",
+    cancelled: "bg-red-500", rejected: "bg-red-500",
+    postponed: "bg-orange-400", preponed: "bg-blue-400",
+    completed: "bg-purple-500",
+    paid: "bg-green-500",
+  }
+  return <span className={`inline-block h-2 w-2 rounded-full shrink-0 mt-1.5 ${colors[status] ?? "bg-muted-foreground"}`} />
+}
+
+// ─── main component ────────────────────────────────────────────────────────────
 
 export default function BookingDetail() {
   const { bookingId } = useParams()
@@ -46,10 +91,10 @@ export default function BookingDetail() {
   const queryClient = useQueryClient()
 
   const [confirmAction, setConfirmAction] = useState(null)
-  const [docsAction, setDocsAction] = useState(null)
-  const [overtimeOpen, setOvertimeOpen] = useState(false)
-  const [deadlineOpen, setDeadlineOpen] = useState(false)
-  const [refundOpen, setRefundOpen] = useState(false)
+  const [docsAction,    setDocsAction]    = useState(null)
+  const [overtimeOpen,  setOvertimeOpen]  = useState(false)
+  const [deadlineOpen,  setDeadlineOpen]  = useState(false)
+  const [refundOpen,    setRefundOpen]    = useState(false)
 
   const { data: raw, isLoading } = useQuery({
     queryKey: ["booking", bookingId],
@@ -57,15 +102,17 @@ export default function BookingDetail() {
     enabled: !!bookingId,
   })
 
-  const booking = raw?.booking ?? raw
-  const id = booking?.id ?? booking?.bookingId ?? bookingId
-  const status = booking?.status
+  const booking   = raw?.booking ?? raw
+  const id        = booking?.bookingId ?? booking?.id ?? bookingId
+  const status    = booking?.lifecycle?.status ?? booking?.status
+  const docStatus = booking?.bookingDetails?.documentStatus ?? "not_required"
+  const bd        = booking?.bookingDetails ?? {}
+  const pricing   = booking?.pricing ?? {}
+  const rel       = booking?.relationships ?? {}
 
   useEffect(() => {
     const shortId = id ? String(id).slice(-8) : null
-    document.title = shortId
-      ? `NFDC Admin — Booking #${shortId}`
-      : "NFDC Admin — Booking Detail"
+    document.title = shortId ? `NFDC Admin — Booking #${shortId}` : "NFDC Admin — Booking"
   }, [id])
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["booking", bookingId] })
@@ -73,12 +120,12 @@ export default function BookingDetail() {
   const statusMutation = useMutation({
     mutationFn: (data) => updateBookingStatus(bookingId, data),
     onSuccess: () => {
-      toast.success(`Status updated`)
+      toast.success("Status updated")
       invalidate()
       queryClient.invalidateQueries({ queryKey: ["bookings"] })
       setConfirmAction(null)
     },
-    onError: () => toast.error("Something went wrong. Please try again."),
+    onError: (e) => toast.error(e?.response?.data?.message ?? "Something went wrong."),
   })
 
   const docsMutation = useMutation({
@@ -88,95 +135,132 @@ export default function BookingDetail() {
       invalidate()
       setDocsAction(null)
     },
-    onError: () => toast.error("Something went wrong. Please try again."),
+    onError: (e) => toast.error(e?.response?.data?.message ?? "Something went wrong."),
   })
 
   const overtimeForm = useForm({
-    resolver: zodResolver(z.object({
-      amount: z.coerce.number().positive("Must be positive"),
-      reason: z.string().min(1, "Reason required"),
-    })),
-    defaultValues: { amount: "", reason: "" },
+    resolver: zodResolver(z.object({ overtimeHours: z.coerce.number().positive("Must be positive") })),
+    defaultValues: { overtimeHours: "" },
   })
-
   const overtimeMutation = useMutation({
-    mutationFn: (data) => addOvertimeCharge(bookingId, data),
-    onSuccess: () => {
-      toast.success("Overtime charge added")
-      invalidate()
-      setOvertimeOpen(false)
-      overtimeForm.reset()
-    },
-    onError: () => toast.error("Something went wrong. Please try again."),
+    mutationFn: (d) => addOvertimeCharge(bookingId, { overtimeHours: Number(d.overtimeHours) }),
+    onSuccess: () => { toast.success("Overtime charge added"); invalidate(); setOvertimeOpen(false); overtimeForm.reset() },
+    onError: (e) => toast.error(e?.response?.data?.message ?? "Something went wrong."),
   })
 
   const deadlineForm = useForm({
-    resolver: zodResolver(z.object({
-      newDeadline: z.date({ required_error: "Select a date" }),
-    })),
-    defaultValues: { newDeadline: undefined },
+    resolver: zodResolver(z.object({ additionalHours: z.coerce.number().positive("Must be positive") })),
+    defaultValues: { additionalHours: "" },
   })
-
   const deadlineMutation = useMutation({
-    mutationFn: (data) => extendDeadline(bookingId, { newDeadline: toAPIDate(data.newDeadline) }),
-    onSuccess: () => {
-      toast.success("Deadline extended")
-      invalidate()
-      setDeadlineOpen(false)
-      deadlineForm.reset()
-    },
-    onError: () => toast.error("Something went wrong. Please try again."),
+    mutationFn: (d) => extendDeadline(bookingId, { additionalHours: Number(d.additionalHours) }),
+    onSuccess: () => { toast.success("Deadline extended"); invalidate(); setDeadlineOpen(false); deadlineForm.reset() },
+    onError: (e) => toast.error(e?.response?.data?.message ?? "Something went wrong."),
   })
 
   const refundMutation = useMutation({
     mutationFn: () => refundDeposit(bookingId),
-    onSuccess: () => {
-      toast.success("Refund initiated")
-      invalidate()
-      setRefundOpen(false)
-    },
-    onError: () => toast.error("Something went wrong. Please try again."),
+    onSuccess: () => { toast.success("Refund initiated"); invalidate(); setRefundOpen(false) },
+    onError: (e) => toast.error(e?.response?.data?.message ?? "Something went wrong."),
   })
+
+  const dur = duration(bd.startTime, bd.endTime)
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start gap-3">
+      {/* ── Header ─────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-0">
           <PageHeader
-            title={`Booking #${id ? String(id).slice(-8) : "..."}`}
-            action={{ label: "Back to Bookings", icon: ArrowLeft, onClick: () => navigate("/admin/bookings") }}
+            title={isLoading ? "Loading…" : `Booking #${String(id ?? "").slice(-8).toUpperCase()}`}
+            action={{ label: "Back", icon: ArrowLeft, onClick: () => navigate("/admin/bookings") }}
           />
+          {!isLoading && id && (
+            <p className="text-xs text-muted-foreground font-mono mt-0.5 ml-px">{id}</p>
+          )}
         </div>
-        {booking && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="shrink-0"
-            onClick={() => { navigator.clipboard.writeText(id); toast.success("Booking ID copied") }}
-          >
-            <Copy className="mr-1.5 h-3.5 w-3.5" />
-            Copy ID
-          </Button>
+        {!isLoading && booking && (
+          <div className="flex items-center gap-2 shrink-0">
+            <StatusBadge status={status} />
+            <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(id); toast.success("ID copied") }}>
+              <Copy className="mr-1.5 h-3.5 w-3.5" /> Copy ID
+            </Button>
+          </div>
         )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left column */}
+
+        {/* ── Left column ──────────────────────────────────────────── */}
         <div className="lg:col-span-2 space-y-6">
+
           {/* Booking Info */}
           <Card>
-            <CardHeader><CardTitle className="text-base">Booking Information</CardTitle></CardHeader>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Booking Details</CardTitle>
+            </CardHeader>
             <CardContent>
-              {isLoading ? <Skeleton className="h-32 w-full" /> : (
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <InfoRow label="Customer Name" value={pick(booking?.user?.name, booking?.customerName, booking?.user)} />
-                  <InfoRow label="Phone" value={pick(booking?.user?.phone, booking?.phone)} />
-                  <InfoRow label="Email" value={pick(booking?.user?.email, booking?.email)} />
-                  <InfoRow label="Audi" value={pick(booking?.audi?.name, booking?.audiName, booking?.audi)} />
-                  <InfoRow label="Date" value={booking?.date ? formatDate(booking.date) : null} />
-                  <InfoRow label="Time" value={booking?.startTime && booking?.endTime ? `${booking.startTime}–${booking.endTime}` : null} />
-                  <InfoRow label="Booking Type" value={booking?.bookingType} />
-                  <InfoRow label="Created At" value={booking?.createdAt ? formatDateTime(booking.createdAt) : null} />
+              {isLoading ? <Skeleton className="h-36 w-full" /> : (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <InfoItem icon={User}        label="Customer"    value={rel.userName} />
+                    <InfoItem icon={Building2}   label="Theater"     value={rel.theaterName} />
+                    <InfoItem icon={Clapperboard} label="Audi"       value={rel.audiName} />
+                  </div>
+                  <Separator />
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <InfoItem icon={CalendarDays} label="Date"
+                      value={formatDate(bd.date)} />
+                    <InfoItem icon={Clock} label="Time"
+                      value={bd.startTime && bd.endTime ? `${bd.startTime} – ${bd.endTime}` : null} />
+                    {dur && (
+                      <InfoItem icon={Timer} label="Duration" value={dur} />
+                    )}
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 h-8 w-8 rounded-md bg-muted flex items-center justify-center shrink-0">
+                        <Tag className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Booking Type</p>
+                        <Badge variant="outline" className="mt-0.5 capitalize text-xs">
+                          {bd.bookingType ?? "—"}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-3 text-xs text-muted-foreground pt-1">
+                    <span>Placed by: <span className="font-medium text-foreground capitalize">{bd.placedBy ?? "—"}</span></span>
+                    <span>·</span>
+                    <span>Created: <span className="font-medium text-foreground">{formatDateTime(booking?.createdAt)}</span></span>
+                    {booking?.updatedAt && booking.updatedAt !== booking.createdAt && (
+                      <>
+                        <span>·</span>
+                        <span>Updated: <span className="font-medium text-foreground">{formatDateTime(booking.updatedAt)}</span></span>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Cancellation info — only when cancelled */}
+                  {status === "cancelled" && (bd.cancellationReason || bd.cancellationCategory) && (
+                    <>
+                      <Separator />
+                      <div className="rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 p-3 space-y-1">
+                        <p className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase tracking-wide">Cancellation</p>
+                        {bd.cancellationCategory && (
+                          <p className="text-sm">
+                            <span className="text-muted-foreground">Category: </span>
+                            <span className="font-medium capitalize">{bd.cancellationCategory.replace(/_/g, " ")}</span>
+                          </p>
+                        )}
+                        {bd.cancellationReason && (
+                          <p className="text-sm">
+                            <span className="text-muted-foreground">Reason: </span>
+                            <span className="font-medium">{bd.cancellationReason}</span>
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -184,120 +268,194 @@ export default function BookingDetail() {
 
           {/* Payment */}
           <Card>
-            <CardHeader><CardTitle className="text-base">Payment Details</CardTitle></CardHeader>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Payment</CardTitle>
+                {!isLoading && <StatusBadge status={booking?.paymentStage?.status ?? "pending"} />}
+              </div>
+            </CardHeader>
             <CardContent>
-              {isLoading ? <Skeleton className="h-24 w-full" /> : (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Total Amount</p>
-                    <p className="text-xl font-bold">{formatINR(booking?.totalAmount ?? booking?.amount ?? 0)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Deposit Paid</p>
-                    <p className="text-sm font-medium">{formatINR(booking?.depositPaid ?? 0)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Balance</p>
-                    <p className="text-sm font-medium">{formatINR(booking?.balance ?? 0)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Payment Status</p>
-                    <div className="mt-0.5"><StatusBadge status={booking?.paymentStatus ?? "pending"} /></div>
-                  </div>
+              {isLoading ? <Skeleton className="h-28 w-full" /> : (
+                <div className="space-y-1">
+                  <AmountRow label="Base (Audi)"      value={formatINR(pricing.baseAmount ?? 0)} />
+                  {(pricing.serviceAmount ?? 0) > 0 && (
+                    <AmountRow label="Services"        value={formatINR(pricing.serviceAmount)} />
+                  )}
+                  <AmountRow
+                    label={`Tax (${pricing.breakdown?.tax?.rate != null ? `${(pricing.breakdown.tax.rate * 100).toFixed(0)}%` : "GST"})`}
+                    value={formatINR(pricing.taxAmount ?? 0)}
+                    muted
+                  />
+                  <Separator className="my-2" />
+                  <AmountRow label="Total Amount"     value={formatINR(pricing.totalAmount ?? 0)} bold />
+                  {(pricing.depositAmount ?? 0) > 0 && (
+                    <AmountRow label="Security Deposit" value={formatINR(pricing.depositAmount)} />
+                  )}
+                  {(pricing.overtimeCharge ?? 0) > 0 && (
+                    <AmountRow
+                      label={`Overtime (${pricing.overtimeHours}h)`}
+                      value={formatINR(pricing.overtimeCharge)}
+                    />
+                  )}
+                  {pricing.depositRefunded && (
+                    <p className="text-xs text-green-600 font-medium pt-1">Deposit refunded</p>
+                  )}
+                  {booking?.paymentDeadline && booking?.paymentStage?.status !== "paid" && (
+                    <p className="text-xs text-muted-foreground pt-1">
+                      Payment deadline: <span className="font-medium text-foreground">{formatDateTime(booking.paymentDeadline)}</span>
+                    </p>
+                  )}
                 </div>
               )}
             </CardContent>
           </Card>
+
+          {/* Status History */}
+          {!isLoading && booking?.lifecycle?.statusHistory?.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                  <History className="h-4 w-4" /> Status History
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {[...booking.lifecycle.statusHistory].reverse().map((h, i) => (
+                    <div key={i} className="flex items-start gap-3 text-sm">
+                      <StatusDot status={h.status} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium capitalize">{h.status}</span>
+                          {h.note && <span className="text-muted-foreground text-xs">— {h.note}</span>}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{formatDateTime(h.timestamp)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
-        {/* Right column */}
+        {/* ── Right column ─────────────────────────────────────────── */}
         <div className="space-y-4">
-          {/* Status Card */}
+
+          {/* Actions */}
           <Card>
-            <CardHeader><CardTitle className="text-base">Booking Status</CardTitle></CardHeader>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Actions</CardTitle>
+            </CardHeader>
             <CardContent>
               {isLoading ? <Skeleton className="h-20 w-full" /> : (
-                <>
-                  <div className="flex items-center gap-2">
-                    <StatusBadge status={status} />
-                    <span className="text-sm capitalize">{status}</span>
-                  </div>
-                  <div className="flex flex-col gap-2 mt-3">
-                    {status === "pending" && (
-                      <>
-                        <Button
-                          className="bg-green-600 hover:bg-green-700 text-white"
-                          onClick={() => setConfirmAction({ action: "accept", label: "Confirm this booking?" })}
-                        >Confirm Booking</Button>
-                        <Button
-                          variant="destructive"
-                          onClick={() => setConfirmAction({ action: "cancel", label: "Cancel this booking? This cannot be undone." })}
-                        >Cancel</Button>
-                      </>
-                    )}
-                    {status === "confirmed" && (
-                      <>
-                        <Button
-                          className="bg-blue-600 hover:bg-blue-700 text-white"
-                          onClick={() => setConfirmAction({ action: "complete", label: "Mark this booking as completed?" })}
-                        >Mark Completed</Button>
-                        <Button
-                          variant="destructive"
-                          onClick={() => setConfirmAction({ action: "cancel", label: "Cancel this booking? This cannot be undone." })}
-                        >Cancel</Button>
-                      </>
-                    )}
-                  </div>
-                </>
+                <div className="space-y-2">
+                  {status === "pending" && (
+                    <>
+                      <Button className="w-full bg-green-600 hover:bg-green-700 text-white"
+                        onClick={() => setConfirmAction({ action: "accept", label: "Accept this booking and notify the customer?" })}>
+                        <CheckCircle2 className="mr-2 h-4 w-4" /> Accept Booking
+                      </Button>
+                      <Button className="w-full" variant="destructive"
+                        onClick={() => setConfirmAction({ action: "cancel", label: "Cancel this booking? This cannot be undone." })}>
+                        <XCircle className="mr-2 h-4 w-4" /> Cancel
+                      </Button>
+                    </>
+                  )}
+                  {status === "accepted" && (
+                    <>
+                      <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                        onClick={() => setConfirmAction({ action: "complete", label: "Mark this booking as completed?" })}>
+                        <CheckCircle2 className="mr-2 h-4 w-4" /> Mark Completed
+                      </Button>
+                      <Button className="w-full" variant="destructive"
+                        onClick={() => setConfirmAction({ action: "cancel", label: "Cancel this booking? This cannot be undone." })}>
+                        <XCircle className="mr-2 h-4 w-4" /> Cancel
+                      </Button>
+                    </>
+                  )}
+                  {status === "confirmed" && (
+                    <>
+                      <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                        onClick={() => setConfirmAction({ action: "complete", label: "Mark this booking as completed?" })}>
+                        <CheckCircle2 className="mr-2 h-4 w-4" /> Mark Completed
+                      </Button>
+                      <Button className="w-full" variant="destructive"
+                        onClick={() => setConfirmAction({ action: "cancel", label: "Cancel this booking? This cannot be undone." })}>
+                        <XCircle className="mr-2 h-4 w-4" /> Cancel
+                      </Button>
+                    </>
+                  )}
+                  {["cancelled", "completed", "superseded"].includes(status) && (
+                    <p className="text-sm text-muted-foreground text-center py-2">No actions available</p>
+                  )}
+                  {!status && <p className="text-sm text-muted-foreground text-center py-2">—</p>}
+                </div>
               )}
             </CardContent>
           </Card>
 
-          {/* Documents */}
+          {/* Document Verification */}
           <Card>
-            <CardHeader><CardTitle className="text-base">Document Verification</CardTitle></CardHeader>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                  <FileCheck className="h-4 w-4" /> Documents
+                </CardTitle>
+                {!isLoading && <StatusBadge status={docStatus} />}
+              </div>
+            </CardHeader>
             <CardContent className="space-y-2">
               {isLoading ? <Skeleton className="h-16 w-full" /> : (
                 <>
-                  <div className="text-sm mb-2">
-                    <StatusBadge status={booking?.documentsStatus ?? "pending"} />
-                  </div>
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    disabled={booking?.documentsStatus === "submitted" || booking?.documentsStatus === "verified"}
-                    onClick={() => setDocsAction("submitted")}
-                  >Mark Submitted</Button>
-                  <Button
-                    variant="outline"
-                    className="w-full border-green-400 text-green-700 hover:bg-green-50"
-                    disabled={booking?.documentsStatus === "verified"}
-                    onClick={() => setDocsAction("verified")}
-                  >Mark Verified</Button>
+                  {bd.documentSubmittedAt && (
+                    <p className="text-xs text-muted-foreground pb-1">
+                      Submitted: <span className="font-medium text-foreground">{formatDateTime(bd.documentSubmittedAt)}</span>
+                    </p>
+                  )}
+                  <Button variant="outline" className="w-full"
+                    disabled={["submitted", "verified"].includes(docStatus)}
+                    onClick={() => setDocsAction("submitted")}>
+                    Mark Submitted
+                  </Button>
+                  <Button variant="outline" className="w-full border-green-400 text-green-700 hover:bg-green-50 dark:hover:bg-green-950"
+                    disabled={docStatus !== "submitted"}
+                    onClick={() => setDocsAction("verified")}>
+                    Mark Verified
+                  </Button>
                 </>
               )}
             </CardContent>
           </Card>
 
-          {/* Extra Actions — theater admins only */}
+          {/* Additional Actions */}
           <RoleGuard permissions={PERMISSIONS.MANAGE_OWN_BOOKINGS}>
             <Card>
-              <CardHeader><CardTitle className="text-base">Additional Actions</CardTitle></CardHeader>
-              <CardContent className="flex flex-col gap-2">
-                <Button variant="outline" onClick={() => setOvertimeOpen(true)}>Add Overtime Charge</Button>
-                <Button variant="outline" onClick={() => setDeadlineOpen(true)}>Extend Payment Deadline</Button>
-                <Button
-                  variant="outline"
-                  className="border-amber-300 text-amber-700 hover:bg-amber-50"
-                  onClick={() => setRefundOpen(true)}
-                >Refund Deposit</Button>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                  <CreditCard className="h-4 w-4" /> Finance
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button variant="outline" className="w-full" onClick={() => setOvertimeOpen(true)}>
+                  Add Overtime Charge
+                </Button>
+                <Button variant="outline" className="w-full" onClick={() => setDeadlineOpen(true)}>
+                  Extend Payment Deadline
+                </Button>
+                <Button variant="outline"
+                  className="w-full border-amber-300 text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950"
+                  disabled={!pricing.depositAmount || pricing.depositRefunded}
+                  onClick={() => setRefundOpen(true)}>
+                  {pricing.depositRefunded ? "Deposit Refunded" : "Refund Deposit"}
+                </Button>
               </CardContent>
             </Card>
           </RoleGuard>
         </div>
       </div>
 
-      {/* Status confirm dialog */}
+      {/* ── Dialogs ──────────────────────────────────────────────────── */}
+
       <AlertDialog open={!!confirmAction} onOpenChange={(o) => !o && setConfirmAction(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -320,7 +478,6 @@ export default function BookingDetail() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Docs confirm dialog */}
       <AlertDialog open={!!docsAction} onOpenChange={(o) => !o && setDocsAction(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -337,14 +494,12 @@ export default function BookingDetail() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Overtime dialog */}
       <Dialog open={overtimeOpen} onOpenChange={setOvertimeOpen}>
         <DialogContent aria-describedby={undefined}>
           <DialogHeader><DialogTitle>Add Overtime Charge</DialogTitle></DialogHeader>
           <Form {...overtimeForm}>
             <form onSubmit={overtimeForm.handleSubmit(v => overtimeMutation.mutate(v))} className="space-y-4">
-              <FormInput control={overtimeForm.control} name="amount" label="Amount (₹)" type="number" />
-              <FormInput control={overtimeForm.control} name="reason" label="Reason" placeholder="Overtime reason..." />
+              <FormInput control={overtimeForm.control} name="overtimeHours" label="Overtime Hours" type="number" placeholder="e.g. 2" />
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setOvertimeOpen(false)}>Cancel</Button>
                 <Button type="submit" disabled={overtimeMutation.isPending} className="bg-nfdc-primary hover:bg-nfdc-primary/90">
@@ -357,13 +512,12 @@ export default function BookingDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* Deadline dialog */}
       <Dialog open={deadlineOpen} onOpenChange={setDeadlineOpen}>
         <DialogContent aria-describedby={undefined}>
           <DialogHeader><DialogTitle>Extend Payment Deadline</DialogTitle></DialogHeader>
           <Form {...deadlineForm}>
             <form onSubmit={deadlineForm.handleSubmit(v => deadlineMutation.mutate(v))} className="space-y-4">
-              <FormDatePicker control={deadlineForm.control} name="newDeadline" label="New Deadline" />
+              <FormInput control={deadlineForm.control} name="additionalHours" label="Additional Hours" type="number" placeholder="e.g. 24" />
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setDeadlineOpen(false)}>Cancel</Button>
                 <Button type="submit" disabled={deadlineMutation.isPending} className="bg-nfdc-primary hover:bg-nfdc-primary/90">
@@ -376,13 +530,12 @@ export default function BookingDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* Refund alert */}
       <AlertDialog open={refundOpen} onOpenChange={setRefundOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Trigger Deposit Refund?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will initiate the refund process and cannot be undone.
+              This will initiate a refund of {formatINR(pricing.depositAmount ?? 0)} and cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
