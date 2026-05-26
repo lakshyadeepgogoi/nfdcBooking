@@ -1,7 +1,7 @@
 import api from "./axiosInstance"
 
-export const getPlatformDashboard = () =>
-  api.get("/super/analytics/dashboard")
+export const getPlatformDashboard = (date) =>
+  api.get("/super/analytics/dashboard", { params: { date } })
 
 export const getPlatformRevenue = (params) =>
   api.get("/super/analytics/revenue", { params })

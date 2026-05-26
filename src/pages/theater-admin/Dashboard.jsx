@@ -2,21 +2,14 @@ import { useEffect } from "react"
 import { Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { pick } from "@/utils/pick"
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts"
-import { DollarSign, CalendarCheck, FileText, Building2 } from "lucide-react"
+import { DollarSign, CalendarCheck, FileText, TrendingUp, Clock, XCircle } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Separator } from "@/components/ui/separator"
 import PageHeader from "@/components/common/PageHeader"
 import StatusBadge from "@/components/common/StatusBadge"
 import EmptyState from "@/components/common/EmptyState"
-import { getAdminDashboard, getRevenueDaily } from "@/api/analytics"
+import { getAdminDashboard, getRevenueAnalytics } from "@/api/analytics"
 import { formatINR } from "@/utils/formatCurrency"
 import { toAPIDate, subDays } from "@/utils/formatDate"
 
@@ -51,22 +44,17 @@ export default function Dashboard() {
   })
 
   const { data: revenueRaw, isLoading: revenueLoading } = useQuery({
-    queryKey: ["analytics", "revenue", "daily"],
+    queryKey: ["analytics", "revenue", "daily", toAPIDate(subDays(new Date(), 7)), today],
     queryFn: () =>
-      getRevenueDaily({
+      getRevenueAnalytics({
+        period: "daily",
         from: toAPIDate(subDays(new Date(), 7)),
         to: today,
       }).then((r) => r.data.data),
   })
 
-  const revenue = Array.isArray(revenueRaw)
-    ? revenueRaw
-    : Array.isArray(revenueRaw?.revenue)
-      ? revenueRaw.revenue
-      : Array.isArray(revenueRaw?.data)
-        ? revenueRaw.data
-        : []
-
+  const rev = revenueRaw?.stats ?? {}
+  const dash = dashboard?.stats ?? {}
   const recentBookings = dashboard?.recentBookings ?? []
 
   return (
@@ -80,72 +68,86 @@ export default function Dashboard() {
           icon={DollarSign}
           iconBg="bg-green-100"
           iconColor="text-green-600"
-          value={formatINR(dashboard?.todayRevenue ?? 0)}
+          value={formatINR(dash.totalRevenue ?? 0)}
           isLoading={dashLoading}
         />
         <KpiCard
-          title="Today's Bookings"
+          title="Confirmed Bookings"
           icon={CalendarCheck}
           iconBg="bg-blue-100"
           iconColor="text-blue-600"
-          value={dashboard?.todayBookings ?? 0}
+          value={dash.confirmedBookings ?? 0}
           isLoading={dashLoading}
         />
         <KpiCard
-          title="Pending Documents"
+          title="Pending Bookings"
           icon={FileText}
           iconBg="bg-amber-100"
           iconColor="text-amber-600"
-          value={dashboard?.pendingDocuments ?? 0}
+          value={dash.pendingBookings ?? 0}
           isLoading={dashLoading}
         />
         <KpiCard
-          title="Active Audis"
-          icon={Building2}
-          iconBg="bg-purple-100"
-          iconColor="text-purple-600"
-          value={dashboard?.activeAudis ?? 0}
+          title="Cancelled"
+          icon={XCircle}
+          iconBg="bg-red-100"
+          iconColor="text-red-600"
+          value={dash.cancelledBookings ?? 0}
           isLoading={dashLoading}
         />
       </div>
 
       {/* Chart + Recent Bookings */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Revenue Chart */}
+        {/* Revenue Summary (last 7 days) */}
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Revenue (Last 7 Days)</CardTitle>
-            <CardDescription>Daily breakdown</CardDescription>
+            <CardDescription>Aggregate breakdown</CardDescription>
           </CardHeader>
           <CardContent>
             {revenueLoading ? (
-              <Skeleton className="h-[280px] w-full" />
+              <div className="space-y-4">
+                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+              </div>
             ) : (
-              <ResponsiveContainer width="100%" height={280}>
-                <AreaChart data={revenue ?? []} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fontSize: 12 }}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis
-                    tickFormatter={(v) => "₹" + v}
-                    tick={{ fontSize: 12 }}
-                    tickLine={false}
-                    axisLine={false}
-                    width={70}
-                  />
-                  <Tooltip formatter={(v) => formatINR(v)} />
-                  <Area
-                    type="monotone"
-                    dataKey="revenue"
-                    fill="#D6E8FA"
-                    stroke="#1A6FC4"
-                    strokeWidth={2}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center py-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-green-50"><DollarSign className="h-4 w-4 text-green-600" /></div>
+                    <span className="text-sm text-muted-foreground">Total Revenue</span>
+                  </div>
+                  <span className="font-semibold">{formatINR(rev.totalRevenue ?? 0)}</span>
+                </div>
+                <Separator />
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-sm text-muted-foreground pl-8">Govt Revenue</span>
+                  <span className="text-sm font-medium">{formatINR(rev.govtRevenue ?? 0)}</span>
+                </div>
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-sm text-muted-foreground pl-8">Non-Govt Revenue</span>
+                  <span className="text-sm font-medium">{formatINR(rev.nonGovtRevenue ?? 0)}</span>
+                </div>
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-sm text-muted-foreground pl-8">Refunds</span>
+                  <span className="text-sm font-medium text-red-600">−{formatINR(rev.refundAmount ?? 0)}</span>
+                </div>
+                <Separator />
+                <div className="flex justify-between items-center py-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-emerald-50"><TrendingUp className="h-4 w-4 text-emerald-600" /></div>
+                    <span className="text-sm font-medium">Net Revenue</span>
+                  </div>
+                  <span className="font-bold text-emerald-600">{formatINR(rev.netRevenue ?? 0)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-purple-50"><Clock className="h-4 w-4 text-purple-600" /></div>
+                    <span className="text-sm text-muted-foreground">Hours Booked</span>
+                  </div>
+                  <span className="font-semibold">{rev.totalHoursBooked ?? 0}h</span>
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>

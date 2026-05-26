@@ -4,33 +4,60 @@ import { useForm, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Loader2, CheckCircle2, XCircle, Clock, Info } from "lucide-react"
+import {
+  format, startOfMonth, endOfMonth, eachDayOfInterval, getDay,
+  isSameDay, isToday, addMonths, subMonths, isBefore, startOfDay,
+} from "date-fns"
+import {
+  ArrowLeft, Loader2, CheckCircle2, XCircle, Clock, Info,
+  ChevronLeft, ChevronRight, CalendarDays,
+} from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { Separator } from "@/components/ui/separator"
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import PageHeader from "@/components/common/PageHeader"
 import FormSelect from "@/components/forms/FormSelect"
 import FormTextarea from "@/components/forms/FormTextarea"
-import FormDatePicker from "@/components/forms/FormDatePicker"
 import { useAuth } from "@/hooks/useAuth"
 import { listAudis } from "@/api/audi"
 import { listSlots } from "@/api/slots"
 import { listServicesGrouped } from "@/api/services"
 import { manualBookingOffline, manualBookingWaived } from "@/api/bookings"
 import { lookupUser } from "@/api/users"
+import { getAudiCalendar } from "@/api/availability"
 import { parseList } from "@/utils/parseList"
 import { toAPIDate } from "@/utils/formatDate"
+import { cn } from "@/lib/utils"
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const today   = new Date(); today.setHours(0, 0, 0, 0)
 
 const toMins   = (t) => { if (!t) return 0; const [h, m] = t.split(":").map(Number); return h * 60 + m }
 const fromMins = (m) => { const h = Math.floor(m / 60); const min = m % 60; return `${String(h).padStart(2,"0")}:${String(min).padStart(2,"0")}` }
+
+const DAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]
+
+// ── Availability status appearance ────────────────────────────────────────────
+const STATUS = {
+  available:    { cell: "hover:bg-emerald-50",             dot: "bg-emerald-500",  label: "Available",    badge: "bg-emerald-50 text-emerald-700 border-emerald-200"  },
+  partial:      { cell: "bg-amber-50/80 hover:bg-amber-100", dot: "bg-amber-500",  label: "Partially booked", badge: "bg-amber-50 text-amber-700 border-amber-200"  },
+  fully_booked: { cell: "bg-red-50",                       dot: "bg-red-500",      label: "Fully booked", badge: "bg-red-50 text-red-700 border-red-200"            },
+  blocked:      { cell: "bg-red-100",                      dot: "bg-red-700",      label: "Blocked",      badge: "bg-red-100 text-red-800 border-red-300"           },
+  locked:       { cell: "bg-slate-100",                    dot: "bg-slate-400",    label: "Locked",       badge: "bg-slate-100 text-slate-500 border-slate-200"     },
+}
+
+const SLOT_STATUS = {
+  available: { color: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200", icon: "✓" },
+  booked:    { color: "text-red-700",     bg: "bg-red-50 border-red-200",         icon: "✗" },
+  blocked:   { color: "text-orange-700",  bg: "bg-orange-50 border-orange-200",   icon: "⊘" },
+  locked:    { color: "text-slate-500",   bg: "bg-slate-50 border-slate-200",     icon: "⏳" },
+}
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -81,7 +108,7 @@ function UserIdField({ control, onVerifiedChange }) {
   useEffect(() => {
     if (isFetching) { onVerifiedChange(false); return }
     onVerifiedChange(!!(isValidUUID && data?.found === true))
-  }, [isFetching, isValidUUID, data])
+  }, [isFetching, isValidUUID, data]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const verified = !isFetching && isValidUUID && data?.found === true
   const invalid  = !isFetching && isValidUUID && data?.found === false
@@ -126,6 +153,212 @@ function UserIdField({ control, onVerifiedChange }) {
   )
 }
 
+// ─── AvailabilityCalendar — FormField for "date" with colour-coded month view ─
+// Uses field.onChange (not setValue) so it never triggers shouldValidate=true,
+// which would cascade validation state to every FormField and trigger Radix
+// Checkbox setRef→setState in an infinite loop.
+
+function AvailabilityCalendar({ control, audiId }) {
+  const [currentMonth, setCurrentMonth] = useState(new Date())
+
+  const monthStr = format(currentMonth, "yyyy-MM")
+
+  const { data: calData, isLoading } = useQuery({
+    queryKey:  ["audi-calendar", audiId, monthStr],
+    queryFn:   () => getAudiCalendar(audiId, monthStr).then(r => r.data.data),
+    enabled:   !!audiId,
+    staleTime: 60_000,
+  })
+
+  const calendar = calData?.calendar ?? {}
+  const slotMode = calData?.slotMode ?? null
+
+  const monthStart   = startOfMonth(currentMonth)
+  const monthEnd     = endOfMonth(currentMonth)
+  const days         = eachDayOfInterval({ start: monthStart, end: monthEnd })
+  const startPadding = getDay(monthStart)
+  const todayStart   = startOfDay(new Date())
+
+  return (
+    <FormField control={control} name="date" render={({ field, fieldState }) => {
+      // Derive selectedDate from field.value — no separate useWatch needed.
+      const selectedDate    = field.value instanceof Date ? field.value : null
+      const selectedDateStr = selectedDate ? toAPIDate(selectedDate) : null
+      const selectedDayData = selectedDateStr ? calendar[selectedDateStr] : null
+
+      const handleDayClick = (day) => {
+        if (isBefore(day, todayStart)) return
+        field.onChange(day)   // standard RHF update — no shouldValidate cascade
+      }
+
+      return (
+        <FormItem>
+          <div className="flex items-center justify-between">
+            <FormLabel>Select Date</FormLabel>
+            {isLoading && audiId && (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" /> Loading availability…
+              </span>
+            )}
+          </div>
+
+          {!audiId ? (
+            <div className="flex items-center gap-2 h-10 px-3 border rounded-md text-sm text-muted-foreground bg-muted/30">
+              <CalendarDays className="h-3.5 w-3.5 shrink-0" /> Select an audi to view availability
+            </div>
+          ) : (
+            <Card className="overflow-hidden">
+              {/* Month navigation */}
+              <CardHeader className="py-2 px-3 border-b">
+                <div className="flex items-center justify-between">
+                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
+                    onClick={() => setCurrentMonth(m => subMonths(m, 1))}>
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="font-semibold text-sm">{format(currentMonth, "MMMM yyyy")}</span>
+                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
+                    onClick={() => setCurrentMonth(m => addMonths(m, 1))}>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </CardHeader>
+
+              <CardContent className="p-3">
+                {/* Day-of-week headers */}
+                <div className="grid grid-cols-7 gap-0.5 mb-1">
+                  {DAY_LABELS.map(d => (
+                    <div key={d} className="h-7 flex items-center justify-center text-[11px] text-muted-foreground font-medium">
+                      {d}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Day cells */}
+                <div className="grid grid-cols-7 gap-0.5">
+                  {Array.from({ length: startPadding }).map((_, i) => <div key={`p-${i}`} />)}
+                  {days.map(day => {
+                    const dateStr     = toAPIDate(day)
+                    const dayData     = calendar[dateStr]
+                    const status      = dayData?.status
+                    const style       = STATUS[status]
+                    const isPast      = isBefore(day, todayStart)
+                    const isSelected  = selectedDate !== null && isSameDay(day, selectedDate)
+                    const isTodayCell = isToday(day)
+
+                    return (
+                      <button
+                        key={dateStr}
+                        type="button"
+                        disabled={isPast}
+                        onClick={() => handleDayClick(day)}
+                        className={cn(
+                          "relative h-9 w-full flex flex-col items-center justify-center rounded-md text-xs transition-colors",
+                          isPast     && "opacity-30 cursor-not-allowed",
+                          !isPast && !isSelected && (style?.cell ?? "hover:bg-muted/60 cursor-pointer"),
+                          isSelected && "bg-nfdc-primary text-white shadow-sm font-semibold",
+                          !isSelected && isTodayCell && "ring-2 ring-nfdc-accent font-semibold",
+                        )}
+                      >
+                        <span className="leading-none">{format(day, "d")}</span>
+                        {!isSelected && status && status !== "available" && (
+                          <span className={cn("mt-0.5 h-1 w-1 rounded-full", style?.dot)} />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {/* Legend */}
+                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 pt-2.5 border-t border-border">
+                  {Object.entries(STATUS).map(([key, val]) => (
+                    <span key={key} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <span className={cn("h-2 w-2 rounded-full shrink-0", val.dot)} />
+                      {val.label}
+                    </span>
+                  ))}
+                </div>
+              </CardContent>
+
+              {/* Selected day details */}
+              {selectedDate !== null && selectedDateStr && (
+                <>
+                  <Separator />
+                  <div className="p-3 space-y-2 bg-muted/20">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-foreground">
+                        {format(selectedDate, "EEEE, MMMM d")}
+                      </p>
+                      {selectedDayData?.status && STATUS[selectedDayData.status] ? (
+                        <span className={cn(
+                          "inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border",
+                          STATUS[selectedDayData.status].badge
+                        )}>
+                          {STATUS[selectedDayData.status].label}
+                        </span>
+                      ) : !isLoading && (
+                        <span className="text-[11px] text-muted-foreground">No data</span>
+                      )}
+                    </div>
+
+                    {/* Fixed mode: per-slot breakdown */}
+                    {slotMode === "fixed" && selectedDayData?.slots?.length > 0 && (
+                      <div className="space-y-1">
+                        {selectedDayData.slots.map(slot => {
+                          const s = SLOT_STATUS[slot.status] ?? SLOT_STATUS.available
+                          return (
+                            <div key={slot.slotId} className={cn("flex items-center justify-between px-2.5 py-1.5 rounded border text-xs", s.bg)}>
+                              <span className={cn("font-medium", s.color)}>{slot.name}</span>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-muted-foreground text-[11px]">{slot.startTime}–{slot.endTime}</span>
+                                <span className={cn("font-bold", s.color)}>{s.icon}</span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* Flexible mode: booked windows */}
+                    {slotMode === "flexible" && selectedDayData?.bookedWindows?.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-[11px] text-muted-foreground font-medium">Booked windows:</p>
+                        {selectedDayData.bookedWindows.map((w, i) => (
+                          <div key={i} className="flex items-center gap-2 px-2.5 py-1.5 rounded border bg-red-50 border-red-200 text-xs">
+                            <span className="text-red-700 font-medium">{w.startTime} – {w.endTime}</span>
+                            <Badge variant="outline" className="text-[10px] capitalize ml-auto">{w.status}</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Flexible: fully clear day */}
+                    {slotMode === "flexible" && selectedDayData?.status === "available" && (
+                      <p className="text-[11px] text-emerald-700 flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3" /> Fully available — no bookings yet
+                      </p>
+                    )}
+
+                    {/* No availability data */}
+                    {!selectedDayData && !isLoading && (
+                      <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                        <Info className="h-3 w-3" /> No booking data for this date
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
+            </Card>
+          )}
+
+          {fieldState.error && (
+            <p className="text-sm font-medium text-destructive">{fieldState.error.message}</p>
+          )}
+        </FormItem>
+      )
+    }} />
+  )
+}
+
 // ─── TimeFields — adapts to audi mode ─────────────────────────────────────────
 
 function TimeFields({ control, setValue, audi }) {
@@ -148,13 +381,7 @@ function TimeFields({ control, setValue, audi }) {
 
   const startTime = useWatch({ control, name: "startTime" }) ?? ""
 
-  if (!audi) {
-    return (
-      <div className="flex items-center gap-2 h-10 px-3 border rounded-md text-sm text-muted-foreground bg-muted/30">
-        <Info className="h-3.5 w-3.5 shrink-0" /> Select an audi first
-      </div>
-    )
-  }
+  if (!audi) return null
 
   // ── Fixed mode: checkbox multi-slot selector ──────────────────────────────
   if (mode === "fixed") {
@@ -292,8 +519,6 @@ function TimeFields({ control, setValue, audi }) {
 }
 
 // ─── ServicesField — grouped by section, mandatory auto-selected ──────────────
-// Mandatory service auto-selection is handled by BookingForm (parent), not here.
-// This component is purely presentational: render services from the cached query.
 
 function ServicesField({ control, audiId, bookingType }) {
   const { data: grouped, isLoading } = useQuery({
@@ -316,8 +541,6 @@ function ServicesField({ control, audiId, bookingType }) {
 
   const renderServiceRow = (svc, field) => {
     const isMandatory = svc.config?.isMandatory ?? false
-    // Mandatory services are always visually checked; no form-state side-effect needed.
-    // Mandatory IDs are injected into the payload at submit time (formatPayload).
     const checked     = isMandatory || (field.value ?? []).includes(svc.serviceId)
     const price       = svc.config?.pricing?.[priceKey]
 
@@ -414,11 +637,9 @@ function BookingForm({ schema, onSubmit, isPending, audiList, submitLabel }) {
   const bookingType = useWatch({ control: form.control, name: "bookingType" })
   const selectedAudi = audiList.find(a => (a.audiId ?? a.id ?? a._id) === audiId) ?? null
 
-  // Reset slot/time/service fields when audi changes.
-  // GUARD: only call setValue when the field is non-empty — RHF uses reference
-  // equality for arrays, so setValue([], []) still broadcasts a "changed"
-  // notification ([] !== []), which re-renders Radix Checkbox components and
-  // triggers their internal ref→setState callbacks, causing an infinite loop.
+  // Reset slot/time/service fields when audi changes (guarded to avoid infinite loop).
+  // form is a stable ref from useForm — safe to omit from deps.
+  /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     const v = form.getValues()
     if (v.slotIds?.length          > 0) form.setValue("slotIds",          [],  { shouldValidate: false })
@@ -426,6 +647,7 @@ function BookingForm({ schema, onSubmit, isPending, audiList, submitLabel }) {
     if (v.endTime)                      form.setValue("endTime",           "",   { shouldValidate: false })
     if (v.selectedServices?.length > 0) form.setValue("selectedServices",  [],  { shouldValidate: false })
   }, [audiId])
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   const audiOptions = audiList.map(a => ({
     value: a.audiId ?? a.id ?? a._id,
@@ -434,7 +656,7 @@ function BookingForm({ schema, onSubmit, isPending, audiList, submitLabel }) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
 
         <UserIdField control={form.control} onVerifiedChange={setUserVerified} />
 
@@ -454,7 +676,12 @@ function BookingForm({ schema, onSubmit, isPending, audiList, submitLabel }) {
           />
         </div>
 
-        <FormDatePicker control={form.control} name="date" label="Date" />
+        {/* Availability calendar — also serves as the date picker */}
+        <AvailabilityCalendar
+          control={form.control}
+          setValue={form.setValue}
+          audiId={audiId || null}
+        />
 
         <TimeFields control={form.control} setValue={form.setValue} audi={selectedAudi} />
 
@@ -524,7 +751,6 @@ export default function ManualBooking() {
   const audiList = Array.isArray(audis?.data) ? audis.data : Array.isArray(audis) ? audis : []
 
   const formatPayload = (values) => {
-    // Inject mandatory service IDs from the cached query — no form-state effect needed.
     const svcsCache   = queryClient.getQueryData(["services-grouped", values.audiId])
     const mandatoryIds = [
       ...(svcsCache?.sections?.flatMap(s => s.services ?? []) ?? []),
@@ -537,9 +763,7 @@ export default function ManualBooking() {
       audiId:           values.audiId,
       userId:           values.userId,
       date:             toAPIDate(values.date),
-      slotIds:          Array.isArray(values.slotIds) && values.slotIds.length > 0
-                          ? values.slotIds
-                          : undefined,
+      slotIds:          Array.isArray(values.slotIds) && values.slotIds.length > 0 ? values.slotIds : undefined,
       startTime:        values.startTime || undefined,
       endTime:          values.endTime   || undefined,
       bookingType:      values.bookingType,

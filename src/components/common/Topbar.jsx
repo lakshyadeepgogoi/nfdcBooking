@@ -26,21 +26,22 @@ export default function Topbar({ title, onMobileMenuToggle }) {
   const navigate = useNavigate()
   const { user, role, logout } = useAuth()
 
+  const isTheaterAdmin = role === "theater-admin"
+
   const { data: notifRaw } = useQuery({
     queryKey: ["notifications"],
     queryFn: () => listNotifications().then((r) => r.data.data),
     staleTime: 60_000,
+    enabled: isTheaterAdmin,
   })
 
-  const notifications = parseList(notifRaw).slice(0, 5)
+  const notifications = isTheaterAdmin ? parseList(notifRaw).slice(0, 5) : []
   const hasNew = notifications.length > 0
 
   const handleLogout = async () => {
     await logout()
     navigate("/login")
   }
-
-  const notifPath = role === "theater-admin" ? "/admin/notifications" : "/super/logs"
 
   return (
     <header className="h-14 border-b bg-background flex items-center px-4 gap-3 shrink-0">
@@ -60,42 +61,43 @@ export default function Topbar({ title, onMobileMenuToggle }) {
         {formatDate(new Date())}
       </span>
 
-      {/* Notifications Popover */}
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
-            <Bell className="h-5 w-5" />
-            {hasNew && (
-              <span className="absolute top-1 right-1 h-2 w-2 bg-red-500 rounded-full" />
+      {/* Notifications Popover — theater admin only */}
+      {isTheaterAdmin && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
+              <Bell className="h-5 w-5" />
+              {hasNew && (
+                <span className="absolute top-1 right-1 h-2 w-2 bg-red-500 rounded-full" />
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80 p-0" align="end">
+            <div className="flex items-center justify-between px-3 py-2">
+              <span className="font-medium text-sm">Notifications</span>
+            </div>
+            <Separator />
+            {notifications.length === 0 ? (
+              <p className="text-sm text-center text-muted-foreground py-4">No notifications</p>
+            ) : (
+              notifications.map((n, i) => (
+                <div key={n.id ?? n._id ?? i} className="px-3 py-2 border-b last:border-0">
+                  <p className="text-sm truncate">{String(n.message ?? "").slice(0, 60)}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {n.createdAt ? formatDateTime(n.createdAt) : ""}
+                  </p>
+                </div>
+              ))
             )}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-80 p-0" align="end">
-          <div className="flex items-center justify-between px-3 py-2">
-            <span className="font-medium text-sm">Notifications</span>
-            <span className="text-xs text-muted-foreground cursor-default">Mark all read</span>
-          </div>
-          <Separator />
-          {notifications.length === 0 ? (
-            <p className="text-sm text-center text-muted-foreground py-4">No notifications</p>
-          ) : (
-            notifications.map((n, i) => (
-              <div key={n.id ?? n._id ?? i} className="px-3 py-2 border-b last:border-0">
-                <p className="text-sm truncate">{String(n.message ?? "").slice(0, 60)}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {n.createdAt ? formatDateTime(n.createdAt) : ""}
-                </p>
-              </div>
-            ))
-          )}
-          <Separator />
-          <div className="px-3 py-2 text-center">
-            <Link to={notifPath} className="text-sm text-nfdc-accent hover:underline">
-              View all notifications →
-            </Link>
-          </div>
-        </PopoverContent>
-      </Popover>
+            <Separator />
+            <div className="px-3 py-2 text-center">
+              <Link to="/admin/notifications" className="text-sm text-nfdc-accent hover:underline">
+                View all notifications →
+              </Link>
+            </div>
+          </PopoverContent>
+        </Popover>
+      )}
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
