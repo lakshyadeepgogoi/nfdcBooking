@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Sheet, SheetContent } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/hooks/useAuth"
 
@@ -110,7 +110,8 @@ export default function Sidebar({ navItems, isMobileOpen, onMobileClose }) {
 
       {/* Mobile sidebar via Sheet */}
       <Sheet open={isMobileOpen} onOpenChange={onMobileClose}>
-        <SheetContent side="left" className="w-[240px] p-0 bg-nfdc-primary border-r-0">
+        <SheetContent side="left" className="w-[240px] p-0 bg-nfdc-primary border-r-0" aria-describedby={undefined}>
+          <SheetTitle className="sr-only">Navigation</SheetTitle>
           <SidebarContent navItems={navItems} onClose={onMobileClose} />
         </SheetContent>
       </Sheet>

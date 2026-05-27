@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { Eye, Power, MoreHorizontal, Plus, Loader2, X } from "lucide-react"
+import { Eye, Power, MoreHorizontal, Plus, Loader2, X, Search } from "lucide-react"
 import RoleGuard from "@/components/common/RoleGuard"
 import { PERMISSIONS } from "@/auth/permissions"
 import { toast } from "sonner"
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -30,7 +31,6 @@ import DataTable from "@/components/common/DataTable"
 import StatusBadge from "@/components/common/StatusBadge"
 import FormInput from "@/components/forms/FormInput"
 import { listAllTheaters, createTheater, updateTheaterStatus } from "@/api/superAdmin"
-import { parseList } from "@/utils/parseList"
 
 // ─── Schema ────────────────────────────────────────────────────────────────────
 
@@ -215,6 +215,12 @@ function CreateTheaterDialog({ open, onOpenChange }) {
 
 // ─── Main Page ──────────────────────────────────────────────────────────────────
 
+const STATUS_OPTIONS = [
+  { value: "",         label: "All Statuses" },
+  { value: "active",   label: "Active"       },
+  { value: "inactive", label: "Inactive"     },
+]
+
 export default function TheaterList() {
   useEffect(() => { document.title = "NFDC Admin — Theaters" }, [])
 
@@ -222,16 +228,30 @@ export default function TheaterList() {
   const queryClient = useQueryClient()
   const [statusTarget, setStatusTarget] = useState(null)
   const [createOpen,   setCreateOpen]   = useState(false)
-  const [page, setPage] = useState(1)
+
+  // filter state
+  const [search,        setSearch]       = useState("")
+  const [appliedSearch, setAppliedSearch] = useState("")
+  const [statusFilter,  setStatusFilter]  = useState("")
+  const [page,          setPage]          = useState(1)
   const pageSize = 10
 
   const { data: raw, isLoading } = useQuery({
-    queryKey: ["theaters", page],
-    queryFn: () => listAllTheaters({ page, limit: pageSize }).then(r => r.data.data),
+    queryKey: ["theaters", page, appliedSearch, statusFilter],
+    queryFn: () => listAllTheaters({
+      page,
+      limit:  pageSize,
+      search: appliedSearch || undefined,
+      status: statusFilter  || undefined,
+    }).then(r => r.data.data),
+    keepPreviousData: true,
   })
 
   const theaters = Array.isArray(raw?.data) ? raw.data : []
   const total    = raw?.pagination?.total ?? theaters.length
+
+  const applySearch = () => { setAppliedSearch(search.trim()); setPage(1) }
+  const clearSearch = () => { setSearch(""); setAppliedSearch(""); setPage(1) }
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }) => updateTheaterStatus(id, status),
@@ -312,7 +332,7 @@ export default function TheaterList() {
   ]
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader title="Theaters">
         <RoleGuard permissions={PERMISSIONS.CREATE_THEATER}>
           <Button className="bg-nfdc-primary hover:bg-nfdc-primary/90" onClick={() => setCreateOpen(true)}>
@@ -321,6 +341,46 @@ export default function TheaterList() {
           </Button>
         </RoleGuard>
       </PageHeader>
+
+      {/* Search + status filter */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            placeholder="Search theaters…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && applySearch()}
+            className="pl-8 h-9 text-sm"
+          />
+          {search && (
+            <button
+              onClick={clearSearch}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        <Select
+          value={statusFilter || "__all"}
+          onValueChange={v => { setStatusFilter(v === "__all" ? "" : v); setPage(1) }}
+        >
+          <SelectTrigger className="h-9 w-36 text-sm">
+            <SelectValue placeholder="All Statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            {STATUS_OPTIONS.map(o => (
+              <SelectItem key={o.value || "__all"} value={o.value || "__all"}>{o.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Button size="sm" className="h-9 bg-nfdc-primary hover:bg-nfdc-primary/90" onClick={applySearch}>
+          Search
+        </Button>
+      </div>
 
       <DataTable
         columns={columns}

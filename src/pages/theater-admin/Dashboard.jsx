@@ -10,6 +10,8 @@ import PageHeader from "@/components/common/PageHeader"
 import StatusBadge from "@/components/common/StatusBadge"
 import EmptyState from "@/components/common/EmptyState"
 import { getAdminDashboard, getRevenueAnalytics } from "@/api/analytics"
+import { getTheaterProfile } from "@/api/theaters"
+import { useAuth } from "@/hooks/useAuth"
 import { formatINR } from "@/utils/formatCurrency"
 import { toAPIDate, subDays } from "@/utils/formatDate"
 
@@ -36,6 +38,16 @@ export default function Dashboard() {
     document.title = "NFDC Admin — Dashboard"
   }, [])
 
+  const { user } = useAuth()
+  const theaterId = user?.theaterId
+
+  const { data: theaterRaw } = useQuery({
+    queryKey: ["theater", theaterId],
+    queryFn: () => getTheaterProfile(theaterId).then(r => r.data.data),
+    enabled: !!theaterId,
+  })
+  const theaterName = theaterRaw?.theater?.name ?? theaterRaw?.name ?? ""
+
   const today = toAPIDate(new Date())
 
   const { data: dashboard, isLoading: dashLoading } = useQuery({
@@ -59,7 +71,10 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Dashboard" subtitle="Today's overview" />
+      <PageHeader
+        title={theaterName || "Dashboard"}
+        subtitle="Today's overview"
+      />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

@@ -43,7 +43,7 @@ export default function AppLayout({ requiredRole }) {
 
       <div className="flex flex-col flex-1 lg:ml-60 overflow-hidden">
         <Topbar
-          title={ROLE_TITLES[role] ?? "NFDC Admin"}
+          title={ROLE_TITLES[role] ?? "NFDC Adminn"}
           onMobileMenuToggle={() => setMobileOpen(true)}
         />
         <main className="flex-1 p-4 md:p-6 bg-gray-50 overflow-auto min-w-0 overflow-x-hidden">

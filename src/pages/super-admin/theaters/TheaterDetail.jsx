@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts"
-import { ArrowLeft, Users, Plus, X, Loader2, Image as ImageIcon, Upload, Trash2 } from "lucide-react"
+import { ArrowLeft, Users, Plus, X, Loader2, Image as ImageIcon, Upload, Trash2, Clock, ChevronDown, ChevronUp, History, User, Download } from "lucide-react"
 import { format } from "date-fns"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,7 +15,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Form } from "@/components/ui/form"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -35,9 +34,15 @@ import {
   updateSuperTheater, updateTheaterStatus, updateTheaterImages,
 } from "@/api/superAdmin"
 import { updateTnCDraft, publishTnC } from "@/api/theaters"
+import { RichTextEditor } from "@/components/ui/rich-text-editor"
 import { formatDateTime, toAPIDate } from "@/utils/formatDate"
+import { formatINR } from "@/utils/formatCurrency"
+import { downloadCSV } from "@/utils/exportCsv"
 import { parseList } from "@/utils/parseList"
 import { cn } from "@/lib/utils"
+
+// ─── Shared primitives ────────────────────────────────────────────────────────
+
 
 // ─── Zod schema ───────────────────────────────────────────────────────────────
 
@@ -362,10 +367,68 @@ function ImagesTab({ theater, theaterId, onSaved }) {
   )
 }
 
+// ─── T&C version history entry ────────────────────────────────────────────────
+
+function TnCHistoryEntry({ entry }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="border border-border rounded-lg overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/40 transition-colors"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <Badge variant="outline" className="shrink-0 font-mono">v{entry.version}</Badge>
+          <div className="flex flex-col gap-0.5 min-w-0">
+            {entry.publishedAt && (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Clock className="h-3 w-3 shrink-0" />
+                {format(new Date(entry.publishedAt), "dd MMM yyyy, HH:mm")}
+              </span>
+            )}
+            {entry.publishedBy && (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground truncate">
+                <User className="h-3 w-3 shrink-0" />
+                {entry.publishedBy}
+              </span>
+            )}
+          </div>
+        </div>
+        {open
+          ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
+          : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+        }
+      </button>
+      {open && entry.body && (
+        <>
+          <Separator />
+          <div
+            className="rich-editor-content px-4 py-3 text-xs text-muted-foreground max-h-64 overflow-y-auto bg-muted/20"
+            dangerouslySetInnerHTML={{ __html: entry.body }}
+          />
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─── Theater status dot ───────────────────────────────────────────────────────
+
+function StatusDot({ status }) {
+  const colors = {
+    active: "bg-green-500", confirmed: "bg-green-500",
+    inactive: "bg-red-500", cancelled: "bg-red-500",
+    pending: "bg-yellow-500",
+  }
+  return <span className={`inline-block h-2 w-2 rounded-full shrink-0 mt-1.5 ${colors[status] ?? "bg-muted-foreground"}`} />
+}
+
 // ─── Tab: T&C (editable) ──────────────────────────────────────────────────────
 
 function TnCTab({ theater, theaterId, onSaved }) {
-  const tnc = theater?.details?.tnc ?? {}
+  const tnc     = theater?.details?.tnc ?? {}
+  const history = [...(tnc.history ?? [])].reverse()
 
   const [title,         setTitle]         = useState(tnc.title ?? "")
   const [body,          setBody]           = useState(tnc.body ?? "")
@@ -378,11 +441,9 @@ function TnCTab({ theater, theaterId, onSaved }) {
     setEffectiveFrom(tnc.effectiveFrom ? new Date(tnc.effectiveFrom) : null)
   }, [theater])
 
-  // Build the draft payload — only include non-empty fields.
-  // updateTncSchema has .min(1) so sending {} would return 400.
   const draftPayload = {
-    ...(title        ? { title }                              : {}),
-    ...(body         ? { body }                               : {}),
+    ...(title         ? { title }                                   : {}),
+    ...(body          ? { body }                                    : {}),
     ...(effectiveFrom ? { effectiveFrom: toAPIDate(effectiveFrom) } : {}),
   }
   const canSaveDraft = Object.keys(draftPayload).length > 0
@@ -400,74 +461,105 @@ function TnCTab({ theater, theaterId, onSaved }) {
   })
 
   return (
-    <div className="space-y-4 max-w-2xl">
-      {/* Status row */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Badge variant="outline">v{tnc.version ?? 1}</Badge>
-        <Badge variant={tnc.status === "published" ? "default" : "secondary"} className="capitalize">
-          {tnc.status ?? "draft"}
-        </Badge>
-        {tnc.effectiveFrom && (
-          <span className="text-sm text-muted-foreground">
-            Effective: {format(new Date(tnc.effectiveFrom), "dd MMM yyyy")}
-          </span>
+    <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+      {/* ── Editor ── */}
+      <div className="xl:col-span-2 space-y-5">
+        {/* Status row */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline" className="font-mono">v{tnc.version ?? 1}</Badge>
+          <Badge variant={tnc.status === "published" ? "default" : "secondary"} className="capitalize">
+            {tnc.status ?? "draft"}
+          </Badge>
+          {tnc.effectiveFrom && (
+            <span className="text-xs text-muted-foreground">
+              Effective: {format(new Date(tnc.effectiveFrom), "dd MMM yyyy")}
+            </span>
+          )}
+        </div>
+
+        {/* Title */}
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium text-muted-foreground">Title</Label>
+          <Input value={title} onChange={e => setTitle(e.target.value)}
+            placeholder="e.g. NFDC Siri Fort Booking Terms & Conditions" />
+        </div>
+
+        {/* Effective From */}
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium text-muted-foreground">Effective From (optional)</Label>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className={cn("w-full sm:w-56 justify-start text-left font-normal",
+                !effectiveFrom && "text-muted-foreground")}>
+                {effectiveFrom ? format(effectiveFrom, "dd MMM yyyy") : "Pick a date"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0">
+              <Calendar
+                mode="single"
+                selected={effectiveFrom}
+                onSelect={setEffectiveFrom}
+                captionLayout="dropdown"
+                fromYear={2020}
+                toYear={2035}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        {/* Rich text editor */}
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium text-muted-foreground">Content</Label>
+          <RichTextEditor
+            content={body}
+            onChange={setBody}
+            placeholder="Write the terms and conditions here…"
+            minHeight={320}
+          />
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-3 pt-1">
+          <Button
+            variant="outline"
+            onClick={() => draftMutation.mutate()}
+            disabled={draftMutation.isPending || !canSaveDraft}
+            title={!canSaveDraft ? "Add title or content to save a draft" : undefined}
+          >
+            {draftMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save Draft
+          </Button>
+          <Button
+            onClick={() => setPublishOpen(true)}
+            disabled={!body}
+            title={!body ? "Add content before publishing" : undefined}
+            className="bg-nfdc-primary hover:bg-nfdc-primary/90"
+          >
+            Publish
+          </Button>
+        </div>
+      </div>
+
+      {/* ── Version History ── */}
+      <div className="space-y-4">
+        <div>
+          <h4 className="text-sm font-semibold">Version History</h4>
+          <p className="text-xs text-muted-foreground mt-0.5">Previously published versions</p>
+        </div>
+        {history.length === 0 ? (
+          <div className="border border-dashed border-border rounded-lg px-4 py-8 text-center">
+            <Clock className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">No published versions yet.</p>
+            <p className="text-xs text-muted-foreground mt-1">History appears after publishing.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {history.map(entry => (
+              <TnCHistoryEntry key={entry.version} entry={entry} />
+            ))}
+          </div>
         )}
-      </div>
-
-      {/* Title */}
-      <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">Title</Label>
-        <Input value={title} onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g. NFDC Siri Fort Booking Terms & Conditions" />
-      </div>
-
-      {/* Effective From */}
-      <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">Effective From (optional)</Label>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" className={cn("w-full sm:w-56 justify-start text-left font-normal",
-              !effectiveFrom && "text-muted-foreground")}>
-              {effectiveFrom ? format(effectiveFrom, "dd MMM yyyy") : "Pick a date"}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0">
-            <Calendar mode="single" selected={effectiveFrom} onSelect={setEffectiveFrom} initialFocus />
-          </PopoverContent>
-        </Popover>
-      </div>
-
-      {/* Body */}
-      <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">Content</Label>
-        <Textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder="Enter terms and conditions..."
-          rows={12}
-          className="font-mono text-sm"
-        />
-      </div>
-
-      {/* Actions */}
-      <div className="flex gap-3">
-        <Button
-          variant="outline"
-          onClick={() => draftMutation.mutate()}
-          disabled={draftMutation.isPending || !canSaveDraft}
-          title={!canSaveDraft ? "Add title or content to save a draft" : undefined}
-        >
-          {draftMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Save Draft
-        </Button>
-        <Button
-          onClick={() => setPublishOpen(true)}
-          disabled={!body}
-          title={!body ? "Add content before publishing" : undefined}
-          className="bg-nfdc-primary hover:bg-nfdc-primary/90"
-        >
-          Publish
-        </Button>
       </div>
 
       <AlertDialog open={publishOpen} onOpenChange={setPublishOpen}>
@@ -523,11 +615,16 @@ export default function TheaterDetail() {
     enabled: !!theaterId,
   })
 
-  const theater  = theaterRaw?.theater ?? theaterRaw
-  const admins   = adminsRaw ?? []
-  const audiData = Array.isArray(audiRaw)
-    ? audiRaw
-    : Object.values(audiRaw ?? {}).find(Array.isArray) ?? []
+  const theater = theaterRaw?.theater ?? theaterRaw
+  const admins  = adminsRaw ?? []
+
+  const audiList = Array.isArray(audiRaw) ? audiRaw : []
+  const audiChartData = audiList.map((a, i) => ({
+    name:      a.audiName ?? a.audiId ?? `Audi ${i + 1}`,
+    bookings:  a.stats?.confirmedBookings ?? 0,
+    revenue:   a.stats?.totalRevenue      ?? 0,
+    occupancy: a.stats?.occupancyRate     ?? 0,
+  }))
 
   const isActive = theater?.lifecycle?.status === "active"
 
@@ -547,7 +644,10 @@ export default function TheaterDetail() {
       : "NFDC Admin — Theater Detail"
   }, [theater?.name])
 
-  const onSaved = () => queryClient.invalidateQueries({ queryKey: ["theater-detail", theaterId] })
+  const onSaved = () => {
+    queryClient.invalidateQueries({ queryKey: ["theater-detail", theaterId] })
+    queryClient.invalidateQueries({ queryKey: ["theaters"] })
+  }
 
   const adminColumns = [
     {
@@ -641,40 +741,123 @@ export default function TheaterDetail() {
       </Card>
 
       {/* Audi Performance */}
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <CardTitle className="text-base">Audi Performance</CardTitle>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm"
-                  className={cn("justify-start text-left font-normal", !audiDate && "text-muted-foreground")}>
-                  {audiDate ? format(audiDate, "dd MMM yyyy") : "Select date"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="end">
-                <Calendar mode="single" selected={audiDate}
-                  onSelect={(d) => d && setAudiDate(d)} initialFocus />
-              </PopoverContent>
-            </Popover>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold">Audi Performance</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Bookings, revenue and occupancy per audi</p>
           </div>
-        </CardHeader>
-        <CardContent>
-          {audiLoading ? <Skeleton className="h-[250px] w-full" /> : audiData.length === 0 ? (
-            <EmptyState title="No data for this date" message="Try selecting a different date." />
-          ) : (
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={audiData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="audiName" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
-                <Tooltip />
-                <Bar dataKey="bookings" fill="#1A6FC4" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </CardContent>
-      </Card>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm"
+                className={cn("justify-start text-left font-normal", !audiDate && "text-muted-foreground")}>
+                {audiDate ? format(audiDate, "dd MMM yyyy") : "Select date"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="end">
+              <Calendar
+                mode="single"
+                selected={audiDate}
+                onSelect={d => d && setAudiDate(d)}
+                captionLayout="dropdown"
+                fromYear={2020}
+                toYear={2035}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        {audiLoading ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Skeleton className="h-[260px] w-full rounded-xl" />
+            <Skeleton className="h-[260px] w-full rounded-xl" />
+          </div>
+        ) : audiChartData.length === 0 ? (
+          <EmptyState title="No data for this date" message="Try selecting a different date." />
+        ) : (
+          <>
+            {/* Bookings + Revenue charts */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Confirmed Bookings by Audi</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <BarChart data={audiChartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                      <Tooltip />
+                      <Bar dataKey="bookings" name="Bookings" fill="#1A6FC4" radius={[4, 4, 0, 0]} maxBarSize={56} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Revenue by Audi</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <BarChart data={audiChartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                      <YAxis
+                        tickFormatter={v => "₹" + (v >= 1000 ? (v / 1000).toFixed(0) + "k" : v)}
+                        tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={52}
+                      />
+                      <Tooltip formatter={v => formatINR(v)} />
+                      <Bar dataKey="revenue" name="Revenue" fill="#0B2E5C" radius={[4, 4, 0, 0]} maxBarSize={56} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Export */}
+            <div className="flex justify-end">
+              <Button size="sm" variant="outline"
+                onClick={() => downloadCSV(
+                  `audi-performance-${toAPIDate(audiDate)}.csv`,
+                  ["Audi", "Bookings", "Revenue (₹)", "Occupancy %"],
+                  audiChartData.map(a => [a.name, a.bookings, a.revenue, a.occupancy])
+                )}>
+                <Download className="mr-1.5 h-3.5 w-3.5" /> Export CSV
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Status History */}
+      {theater?.lifecycle?.statusHistory?.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+              <History className="h-4 w-4" /> Status History
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {[...theater.lifecycle.statusHistory].reverse().map((h, i) => (
+                <div key={i} className="flex items-start gap-3 text-sm">
+                  <StatusDot status={h.status} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium capitalize">{h.status}</span>
+                      {h.note && <span className="text-muted-foreground text-xs">— {h.note}</span>}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{formatDateTime(h.timestamp)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

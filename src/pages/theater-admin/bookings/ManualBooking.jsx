@@ -626,6 +626,8 @@ function BookingForm({ schema, onSubmit, isPending, audiList, submitLabel }) {
 
   const form = useForm({
     resolver: zodResolver(schema),
+    mode: "onSubmit",
+    reValidateMode: "onSubmit",
     defaultValues: {
       userId: "", audiId: "", slotIds: [], startTime: "", endTime: "",
       bookingType: "govt", selectedServices: [], notes: "",

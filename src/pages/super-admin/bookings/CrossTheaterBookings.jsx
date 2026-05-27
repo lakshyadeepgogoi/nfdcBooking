@@ -185,23 +185,23 @@ export default function CrossTheaterBookings() {
       header: "Status",
       cell: ({ row }) => <StatusBadge status={row.original.lifecycle?.status ?? row.original.status} />,
     },
-    // {
-    //   id: "actions",
-    //   header: "",
-    //   cell: ({ row }) => {
-    //     const id = row.original.bookingId ?? row.original._id
-    //     return (
-    //       <Button
-    //         variant="ghost"
-    //         size="icon"
-    //         className="h-8 w-8"
-    //         onClick={e => { e.stopPropagation(); navigate(`/admin/bookings/${id}`) }}
-    //       >
-    //         <Eye className="h-4 w-4" />
-    //       </Button>
-    //     )
-    //   },
-    // },
+    {
+      id: "actions",
+      header: "",
+      cell: ({ row }) => {
+        const id = row.original.bookingId ?? row.original._id
+        return (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={e => { e.stopPropagation(); navigate(`/admin/bookings/${id}`) }}
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
+        )
+      },
+    },
   ]
 
   return (
