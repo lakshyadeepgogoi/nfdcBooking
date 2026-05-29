@@ -587,6 +587,57 @@ function TnCTab({ theater, theaterId, onSaved }) {
   )
 }
 
+// ─── Tab: Config ──────────────────────────────────────────────────────────────
+
+function ConfigTab({ theater, theaterId, onSaved }) {
+  const [allowUserReschedule, setAllowUserReschedule] = useState(
+    theater?.config?.allowUserReschedule ?? false
+  )
+
+  useEffect(() => {
+    setAllowUserReschedule(theater?.config?.allowUserReschedule ?? false)
+  }, [theater])
+
+  const mutation = useMutation({
+    mutationFn: (val) => updateSuperTheater(theaterId, { config: { allowUserReschedule: val } }),
+    onSuccess: () => { toast.success("Config updated"); onSaved() },
+    onError: (err) => toast.error(err?.response?.data?.message ?? "Something went wrong."),
+  })
+
+  const handleToggle = (val) => {
+    setAllowUserReschedule(val)
+    mutation.mutate(val)
+  }
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h3 className="text-base font-semibold">Booking Configuration</h3>
+        <p className="text-sm text-muted-foreground mt-0.5">Control booking behaviour for this theater</p>
+      </div>
+
+      <div className="border rounded-lg divide-y">
+        <div className="flex items-center justify-between p-4">
+          <div className="space-y-0.5">
+            <Label className="text-sm font-medium">User-initiated Reschedule</Label>
+            <p className="text-xs text-muted-foreground">
+              Allow customers to request a reschedule from their booking portal
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 ml-4">
+            {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+            <Switch
+              checked={allowUserReschedule}
+              onCheckedChange={handleToggle}
+              disabled={mutation.isPending}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Page ──────────────────────────────────────────────────────────────────
 
 export default function TheaterDetail() {
@@ -708,6 +759,7 @@ export default function TheaterDetail() {
           <TabsTrigger value="facilities" className="w-full justify-start text-left data-[state=active]:shadow-sm">Facilities</TabsTrigger>
           <TabsTrigger value="images"     className="w-full justify-start text-left data-[state=active]:shadow-sm">Images</TabsTrigger>
           <TabsTrigger value="tnc"        className="w-full justify-start text-left data-[state=active]:shadow-sm">T&amp;C</TabsTrigger>
+          <TabsTrigger value="config"     className="w-full justify-start text-left data-[state=active]:shadow-sm">Config</TabsTrigger>
         </TabsList>
 
         <div className="flex-1 border rounded-lg sm:rounded-l-none sm:border-l-0 bg-background">
@@ -724,6 +776,9 @@ export default function TheaterDetail() {
           <TabsContent value="tnc" className="m-0 p-6">
             <h3 className="text-base font-semibold mb-4">Terms &amp; Conditions</h3>
             <TnCTab theater={theater} theaterId={theaterId} onSaved={onSaved} />
+          </TabsContent>
+          <TabsContent value="config" className="m-0 p-6">
+            <ConfigTab theater={theater} theaterId={theaterId} onSaved={onSaved} />
           </TabsContent>
         </div>
       </Tabs>

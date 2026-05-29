@@ -11,6 +11,7 @@ import PriceConfigList from "@/pages/theater-admin/pricing/PriceConfigList"
 import BookingList from "@/pages/theater-admin/bookings/BookingList"
 import BookingDetail from "@/pages/theater-admin/bookings/BookingDetail"
 import ManualBooking from "@/pages/theater-admin/bookings/ManualBooking"
+import RescheduleList from "@/pages/theater-admin/reschedule/RescheduleList"
 import BlockManager from "@/pages/theater-admin/blocks/BlockManager"
 import AnalyticsDashboard from "@/pages/theater-admin/analytics/AnalyticsDashboard"
 import Notifications from "@/pages/theater-admin/Notifications"
@@ -38,6 +39,7 @@ export default function TheaterAdminRoutes() {
         <Route path="bookings" element={<BookingList />} />
         <Route path="bookings/manual" element={<ManualBooking />} />
         <Route path="bookings/:bookingId" element={<BookingDetail />} />
+        <Route path="reschedule" element={<RescheduleList />} />
         <Route path="blocks" element={<BlockManager />} />
         <Route path="analytics" element={<AnalyticsDashboard />} />
         <Route path="notifications" element={<Notifications />} />

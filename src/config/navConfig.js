@@ -20,6 +20,7 @@ import {
   ListChecks,
   Tag,
   CalendarCheck,
+  CalendarClock,
   Ban,
   BarChart3,
   Bell,
@@ -70,6 +71,12 @@ export const NAV_ITEMS = [
     label: "Bookings",
     path:  "/admin/bookings",
     icon:  CalendarCheck,
+    roles: [ROLES.THEATER_ADMIN],
+  },
+  {
+    label: "Reschedule",
+    path:  "/admin/reschedule",
+    icon:  CalendarClock,
     roles: [ROLES.THEATER_ADMIN],
   },
   {

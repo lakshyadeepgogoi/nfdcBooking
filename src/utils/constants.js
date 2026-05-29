@@ -1,9 +1,15 @@
 export const BOOKING_STATUS = {
-  PENDING: "pending",
-  CONFIRMED: "confirmed",
-  COMPLETED: "completed",
-  CANCELLED: "cancelled",
-  WAIVED: "waived",
+  PENDING:                     "pending",
+  ACCEPTED:                    "accepted",
+  CONFIRMED:                   "confirmed",
+  POSTPONED:                   "postponed",
+  PREPONED:                    "preponed",
+  RESCHEDULE_REQUESTED:        "reschedule_requested",
+  AWAITING_RESCHEDULE_PAYMENT: "awaiting_reschedule_payment",
+  COMPLETED:                   "completed",
+  CANCELLED:                   "cancelled",
+  WAIVED:                      "waived",
+  SUPERSEDED:                  "superseded",
 }
 
 // ROLES is now the authoritative copy in src/auth/permissions.js
