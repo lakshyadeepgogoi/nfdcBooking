@@ -768,10 +768,10 @@ export default function ServiceList() {
         </Select>
 
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setAddServiceCtx({ sectionId: null })}>
+          <Button variant="outline" disabled={selectedScope === "theater"} onClick={() => setAddServiceCtx({ sectionId: null })}>
             <Plus className="mr-1.5 h-4 w-4" /> Add Service
           </Button>
-          <Button onClick={() => setAddSectionOpen(true)} className="bg-nfdc-primary hover:bg-nfdc-primary/90">
+          <Button disabled={selectedScope === "theater"} onClick={() => setAddSectionOpen(true)} className="bg-nfdc-primary hover:bg-nfdc-primary/90">
             <Plus className="mr-1.5 h-4 w-4" /> Add Section
           </Button>
         </div>

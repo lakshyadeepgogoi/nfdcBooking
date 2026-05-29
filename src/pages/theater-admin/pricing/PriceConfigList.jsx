@@ -25,8 +25,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuSeparator, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -51,72 +50,79 @@ import { formatINR } from "@/utils/formatCurrency"
 
 const TABS = ["audi", "service", "cancellation", "postponement"]
 
+const TAB_META = {
+  audi:         { description: "Hourly pricing rates for each audi"            },
+  service:      { description: "Flat rate pricing for individual services"      },
+  cancellation: { description: "Charge policy applied on booking cancellations" },
+  postponement: { description: "Charge policy applied on booking postponements" },
+}
+
 const PRICING_TYPES_BY_ENTITY = {
-  audi:         ["hourly_table"],  // flat/shift_based are ignored by the fee calculator for audis
-  service:      ["flat"],
+  audi: ["hourly_table"],  // flat/shift_based are ignored by the fee calculator for audis
+  service: ["flat"],
   cancellation: ["charge_policy"],
   postponement: ["charge_policy"],
 }
 
 const DEFAULT_PRICING_TYPE = {
-  audi:         "hourly_table",
-  service:      "flat",
+  audi: "hourly_table",
+  service: "flat",
   cancellation: "charge_policy",
   postponement: "charge_policy",
 }
 
 const PRICING_TYPE_LABELS = {
-  hourly_table:  "Hourly Table",
-  shift_based:   "Shift Based",
-  flat:          "Flat Rate",
+  hourly_table: "Hourly Table",
+  shift_based: "Shift Based",
+  flat: "Flat Rate",
   charge_policy: "Charge Policy",
 }
 
 // ─── Zod schemas ────────────────────────────────────────────────────────────────
 
 const priceZ = z.object({
-  govt:    z.union([z.coerce.number().min(0), z.literal(""), z.null()]).optional(),
+  govt: z.union([z.coerce.number().min(0), z.literal(""), z.null()]).optional(),
   nonGovt: z.union([z.coerce.number().min(0), z.literal(""), z.null()]).optional(),
 })
 
 const secDepZ = z.object({
-  applicable:  z.boolean().default(false),
+  applicable: z.boolean().default(false),
   depositType: z.enum(["fixed", "percentage"]).optional(),
-  amount:      z.union([z.coerce.number().min(0), z.literal("")]).optional(),
-  percentage:  z.union([z.coerce.number().min(0).max(100), z.literal("")]).optional(),
+  amount: z.union([z.coerce.number().min(0), z.literal("")]).optional(),
+  percentage: z.union([z.coerce.number().min(0).max(100), z.literal("")]).optional(),
   description: z.string().optional(),
-  refundable:  z.boolean().default(true),
+  refundable: z.boolean().default(true),
 })
 
 const hourlyItemZ = z.object({
-  hours:           z.coerce.number().positive("Must be > 0"),
-  price:           priceZ,
+  hours: z.coerce.number().positive("Must be > 0"),
+  price: priceZ,
   securityDeposit: secDepZ.optional(),
-  isActive:        z.boolean().default(true),
+  isActive: z.boolean().default(true),
 })
 
 const shiftItemZ = z.object({
-  name:      z.string().min(1, "Name required"),
+  name: z.string().min(1, "Name required"),
   startTime: z.string().regex(/^\d{2}:\d{2}$/, "Use HH:MM"),
-  endTime:   z.string().regex(/^\d{2}:\d{2}$/, "Use HH:MM"),
-  price:     priceZ,
-  isActive:  z.boolean().default(true),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/, "Use HH:MM"),
+  price: priceZ,
+  isActive: z.boolean().default(true),
 })
 
 const slabZ = z.object({
-  label:         z.string().optional(),
-  daysFrom:      z.coerce.number().min(0, "Min 0"),
-  daysTo:        z.union([z.coerce.number().min(0), z.literal(""), z.null()]).optional(),
-  percentage:    z.coerce.number().min(0).max(100, "Max 100%"),
+  label: z.string().optional(),
+  daysFrom: z.coerce.number().min(0, "Min 0"),
+  daysTo: z.union([z.coerce.number().min(0), z.literal(""), z.null()]).optional(),
+  percentage: z.coerce.number().min(0).max(100, "Max 100%"),
   minimumCharge: z.union([z.coerce.number().min(0), z.literal("")]).optional(),
 })
 
 const formZ = z.object({
-  entityId:    z.string().min(1, "Select an entity"),
+  entityId: z.string().min(1, "Select an entity"),
   pricingType: z.enum(["hourly_table", "shift_based", "flat", "charge_policy"]),
   hourlyRates: z.array(hourlyItemZ).optional(),
-  shifts:      z.array(shiftItemZ).optional(),
-  flatGovt:    z.union([z.coerce.number().min(0), z.literal("")]).optional(),
+  shifts: z.array(shiftItemZ).optional(),
+  flatGovt: z.union([z.coerce.number().min(0), z.literal("")]).optional(),
   flatNonGovt: z.union([z.coerce.number().min(0), z.literal("")]).optional(),
   chargeSlabs: z.array(slabZ).optional(),
 })
@@ -124,40 +130,40 @@ const formZ = z.object({
 // ─── Form helpers ──────────────────────────────────────────────────────────────
 
 const EMPTY_HOURLY = { hours: "", price: { govt: "", nonGovt: "" }, securityDeposit: { applicable: false, refundable: true }, isActive: true }
-const EMPTY_SLAB   = { label: "", daysFrom: "", daysTo: "", percentage: "", minimumCharge: "" }
+const EMPTY_SLAB = { label: "", daysFrom: "", daysTo: "", percentage: "", minimumCharge: "" }
 
 function pcToForm(pc) {
   const c = pc.config
   return {
-    entityId:    pc.relationships?.entityId ?? "",
+    entityId: pc.relationships?.entityId ?? "",
     pricingType: c.pricingType,
     hourlyRates: c.hourlyRates?.length
       ? c.hourlyRates.map(r => ({
-          hours:   r.hours ?? "",
-          price:   { govt: r.price?.govt ?? "", nonGovt: r.price?.nonGovt ?? "" },
-          isActive: r.isActive ?? true,
-          securityDeposit: r.securityDeposit ?? { applicable: false, refundable: true },
-        }))
+        hours: r.hours ?? "",
+        price: { govt: r.price?.govt ?? "", nonGovt: r.price?.nonGovt ?? "" },
+        isActive: r.isActive ?? true,
+        securityDeposit: r.securityDeposit ?? { applicable: false, refundable: true },
+      }))
       : [],
     shifts: c.shifts?.length
       ? c.shifts.map(s => ({
-          name:      s.name ?? "",
-          startTime: s.startTime ?? "09:00",
-          endTime:   s.endTime ?? "18:00",
-          price:     { govt: s.price?.govt ?? "", nonGovt: s.price?.nonGovt ?? "" },
-          isActive:  s.isActive ?? true,
-        }))
+        name: s.name ?? "",
+        startTime: s.startTime ?? "09:00",
+        endTime: s.endTime ?? "18:00",
+        price: { govt: s.price?.govt ?? "", nonGovt: s.price?.nonGovt ?? "" },
+        isActive: s.isActive ?? true,
+      }))
       : [],
-    flatGovt:    c.flatRate?.price?.govt    ?? "",
+    flatGovt: c.flatRate?.price?.govt ?? "",
     flatNonGovt: c.flatRate?.price?.nonGovt ?? "",
     chargeSlabs: c.chargeSlabs?.length
       ? c.chargeSlabs.map(s => ({
-          label:         s.label         ?? "",
-          daysFrom:      s.daysFrom      ?? "",
-          daysTo:        s.daysTo        ?? "",
-          percentage:    s.percentage    ?? "",
-          minimumCharge: s.minimumCharge ?? "",
-        }))
+        label: s.label ?? "",
+        daysFrom: s.daysFrom ?? "",
+        daysTo: s.daysTo ?? "",
+        percentage: s.percentage ?? "",
+        minimumCharge: s.minimumCharge ?? "",
+      }))
       : [{ ...EMPTY_SLAB }],
   }
 }
@@ -167,8 +173,8 @@ function emptyForm(entityType, entityId = "") {
     entityId,
     pricingType: DEFAULT_PRICING_TYPE[entityType] ?? "flat",
     hourlyRates: [],   // start empty — hidden rows with invalid values block submission silently
-    shifts:      [],   // same reason
-    flatGovt:    "",
+    shifts: [],   // same reason
+    flatGovt: "",
     flatNonGovt: "",
     chargeSlabs: [{ ...EMPTY_SLAB }],
   }
@@ -183,27 +189,27 @@ function buildConfig(values) {
 
   if (pricingType === "hourly_table") {
     config.hourlyRates = values.hourlyRates?.map(r => ({
-      hours:    Number(r.hours),
-      price:    { govt: n(r.price.govt), nonGovt: n(r.price.nonGovt) },
+      hours: Number(r.hours),
+      price: { govt: n(r.price.govt), nonGovt: n(r.price.nonGovt) },
       isActive: r.isActive ?? true,
       securityDeposit: r.securityDeposit?.applicable
         ? {
-            applicable:  true,
-            depositType: r.securityDeposit.depositType,
-            amount:      n(r.securityDeposit.amount),
-            percentage:  n(r.securityDeposit.percentage),
-            description: r.securityDeposit.description || undefined,
-            refundable:  r.securityDeposit.refundable ?? true,
-          }
+          applicable: true,
+          depositType: r.securityDeposit.depositType,
+          amount: n(r.securityDeposit.amount),
+          percentage: n(r.securityDeposit.percentage),
+          description: r.securityDeposit.description || undefined,
+          refundable: r.securityDeposit.refundable ?? true,
+        }
         : { applicable: false },
     }))
   } else if (pricingType === "shift_based") {
     config.shifts = values.shifts?.map(s => ({
-      name:      s.name,
+      name: s.name,
       startTime: s.startTime,
-      endTime:   s.endTime,
-      price:     { govt: n(s.price.govt), nonGovt: n(s.price.nonGovt) },
-      isActive:  s.isActive ?? true,
+      endTime: s.endTime,
+      price: { govt: n(s.price.govt), nonGovt: n(s.price.nonGovt) },
+      isActive: s.isActive ?? true,
     }))
   } else if (pricingType === "flat") {
     config.flatRate = {
@@ -211,10 +217,10 @@ function buildConfig(values) {
     }
   } else if (pricingType === "charge_policy") {
     config.chargeSlabs = values.chargeSlabs?.map(s => ({
-      label:         s.label || undefined,
-      daysFrom:      Number(s.daysFrom),
-      daysTo:        s.daysTo !== "" && s.daysTo != null ? Number(s.daysTo) : null,
-      percentage:    Number(s.percentage),
+      label: s.label || undefined,
+      daysFrom: Number(s.daysFrom),
+      daysTo: s.daysTo !== "" && s.daysTo != null ? Number(s.daysTo) : null,
+      percentage: Number(s.percentage),
       minimumCharge: n(s.minimumCharge),
     }))
   }
@@ -236,7 +242,7 @@ function ConfigSummary({ config }) {
           <div key={i} className="flex items-center justify-between py-0.5">
             <span className="text-muted-foreground w-12">{r.hours}h</span>
             <div className="flex gap-3">
-              {r.price?.govt    != null && <span>Govt: <strong>{formatINR(r.price.govt)}</strong></span>}
+              {r.price?.govt != null && <span>Govt: <strong>{formatINR(r.price.govt)}</strong></span>}
               {r.price?.nonGovt != null && <span>Non-Govt: <strong>{formatINR(r.price.nonGovt)}</strong></span>}
             </div>
             {r.securityDeposit?.applicable && (
@@ -261,7 +267,7 @@ function ConfigSummary({ config }) {
               <span className="text-xs text-muted-foreground shrink-0">{s.startTime}–{s.endTime}</span>
             </div>
             <div className="flex gap-3 shrink-0">
-              {s.price?.govt    != null && <span>Govt: <strong>{formatINR(s.price.govt)}</strong></span>}
+              {s.price?.govt != null && <span>Govt: <strong>{formatINR(s.price.govt)}</strong></span>}
               {s.price?.nonGovt != null && <span>Non-Govt: <strong>{formatINR(s.price.nonGovt)}</strong></span>}
             </div>
           </div>
@@ -275,7 +281,7 @@ function ConfigSummary({ config }) {
     if (!p?.govt && !p?.nonGovt) return <p className="text-sm text-muted-foreground">No pricing set</p>
     return (
       <div className="flex flex-wrap gap-4 text-sm">
-        {p?.govt    != null && <span>Govt: <strong>{formatINR(p.govt)}</strong></span>}
+        {p?.govt != null && <span>Govt: <strong>{formatINR(p.govt)}</strong></span>}
         {p?.nonGovt != null && <span>Non-Govt: <strong>{formatINR(p.nonGovt)}</strong></span>}
       </div>
     )
@@ -310,9 +316,9 @@ function ConfigSummary({ config }) {
 
 function AudiInfoPanel({ audi, existingActiveConfig, audiSlots = [] }) {
   if (!audi) return null
-  const cfg       = audi.config ?? {}
-  const mode      = cfg.slotMode
-  const capacity  = cfg.capacity
+  const cfg = audi.config ?? {}
+  const mode = cfg.slotMode
+  const capacity = cfg.capacity
   const durations = cfg.bookingDurations ?? []
 
   const toMins = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m }
@@ -322,7 +328,7 @@ function AudiInfoPanel({ audi, existingActiveConfig, audiSlots = [] }) {
       const diff = toMins(s.config.endTime) - toMins(s.config.startTime)
       // handle overnight slots
       const mins = diff < 0 ? diff + 24 * 60 : diff
-      const hrs  = Math.round((mins / 60) * 10) / 10
+      const hrs = Math.round((mins / 60) * 10) / 10
       return { name: s.name, start: s.config.startTime, end: s.config.endTime, hours: hrs }
     })
 
@@ -407,7 +413,7 @@ function PriceConfigDialog({ open, onOpenChange, entityType, entityOptions, edit
     defaultValues: editingConfig ? pcToForm(editingConfig) : emptyForm(entityType),
   })
 
-  const pricingType    = form.watch("pricingType")
+  const pricingType = form.watch("pricingType")
   const selectedEntity = form.watch("entityId")
 
   // Derive selected audi details + duplicate-config warning
@@ -417,16 +423,16 @@ function PriceConfigDialog({ open, onOpenChange, entityType, entityOptions, edit
 
   const existingActiveConfig = entityType === "audi" && existingConfigs && selectedEntity
     ? existingConfigs.find(
-        c => c.relationships?.entityId === selectedEntity &&
-             c.lifecycle?.status === "active" &&
-             (!editingConfig || c.priceConfigId !== editingConfig.priceConfigId)
-      ) ?? null
+      c => c.relationships?.entityId === selectedEntity &&
+        c.lifecycle?.status === "active" &&
+        (!editingConfig || c.priceConfigId !== editingConfig.priceConfigId)
+    ) ?? null
     : null
 
   // Operational hours from the selected audi — used to constrain shift times
   const audiMode = selectedAudi?.config?.slotMode
-  const opStart  = selectedAudi?.config?.operationalHours?.start ?? ""
-  const opEnd    = selectedAudi?.config?.operationalHours?.end   ?? ""
+  const opStart = selectedAudi?.config?.operationalHours?.start ?? ""
+  const opEnd = selectedAudi?.config?.operationalHours?.end ?? ""
 
   // Fetch active slots for fixed-mode audis — used to show duration hints in the info panel
   const { data: slotsRaw } = useQuery({
@@ -437,7 +443,7 @@ function PriceConfigDialog({ open, onOpenChange, entityType, entityOptions, edit
     }),
     enabled: entityType === "audi" && audiMode === "fixed" && !!selectedEntity,
   })
-  const slotsArr  = Array.isArray(slotsRaw?.data) ? slotsRaw.data : Array.isArray(slotsRaw) ? slotsRaw : []
+  const slotsArr = Array.isArray(slotsRaw?.data) ? slotsRaw.data : Array.isArray(slotsRaw) ? slotsRaw : []
   const audiSlots = slotsArr.filter(s => s.lifecycle?.status === "active")
 
   // When a new audi is selected, auto-fill existing shift rows with its operational hours
@@ -448,7 +454,7 @@ function PriceConfigDialog({ open, onOpenChange, entityType, entityOptions, edit
     const shifts = form.getValues("shifts") ?? []
     shifts.forEach((_, i) => {
       if (opStart) form.setValue(`shifts.${i}.startTime`, opStart)
-      if (opEnd)   form.setValue(`shifts.${i}.endTime`,   opEnd)
+      if (opEnd) form.setValue(`shifts.${i}.endTime`, opEnd)
     })
   }, [opStart, opEnd]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -666,7 +672,7 @@ function PriceConfigDialog({ open, onOpenChange, entityType, entityOptions, edit
 
                   {hrFields.map((field, i) => {
                     const secApplicable = form.watch(`hourlyRates.${i}.securityDeposit.applicable`)
-                    const depositType   = form.watch(`hourlyRates.${i}.securityDeposit.depositType`)
+                    const depositType = form.watch(`hourlyRates.${i}.securityDeposit.depositType`)
                     return (
                       <Card key={field.id} className="p-3 space-y-3">
                         <div className="grid grid-cols-3 gap-3 items-end">
@@ -815,7 +821,7 @@ function PriceConfigDialog({ open, onOpenChange, entityType, entityOptions, edit
                       onClick={() => shiftAppend({
                         name: "", isActive: true,
                         startTime: opStart || "09:00",
-                        endTime:   opEnd   || "18:00",
+                        endTime: opEnd || "18:00",
                         price: { govt: "", nonGovt: "" },
                       })}>
                       <Plus className="mr-1 h-3.5 w-3.5" /> Add Shift
@@ -1027,44 +1033,51 @@ function PriceConfigCard({ pc, entityName, onEdit, onToggleStatus }) {
   const isActive = pc.lifecycle?.status === "active"
 
   return (
-    <Card className={!isActive ? "opacity-60" : ""}>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-2 flex-wrap min-w-0">
-            <span className="font-semibold text-sm truncate">{entityName}</span>
-            <Badge variant="secondary" className="text-xs shrink-0">
-              {PRICING_TYPE_LABELS[pc.config?.pricingType] ?? pc.config?.pricingType}
-            </Badge>
-            <StatusBadge status={pc.lifecycle?.status} />
+    <Card className={`transition-opacity ${!isActive ? "opacity-60" : ""}`}>
+      <CardHeader className="pb-3">
+        <div className="flex items-start gap-2">
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm leading-snug truncate">{entityName}</p>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+              <Badge variant="secondary" className="text-xs">
+                {PRICING_TYPE_LABELS[pc.config?.pricingType] ?? pc.config?.pricingType}
+              </Badge>
+              <StatusBadge status={pc.lifecycle?.status} />
+            </div>
           </div>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onEdit(pc)}>
-                <Pencil className="mr-2 h-4 w-4" /> Edit Config
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => onToggleStatus(pc)}
-                className={isActive ? "text-destructive focus:text-destructive" : ""}
-              >
-                <Power className="mr-2 h-4 w-4" />
-                {isActive ? "Deactivate" : "Activate"}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex items-center gap-0.5 shrink-0">
+            <Button
+              variant="ghost" size="icon" className="h-7 w-7"
+              title="Edit config"
+              onClick={() => onEdit(pc)}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => onToggleStatus(pc)}
+                  className={isActive ? "text-destructive focus:text-destructive" : ""}
+                >
+                  <Power className="mr-2 h-4 w-4" />
+                  {isActive ? "Deactivate" : "Activate"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </CardHeader>
 
       <CardContent className="pt-0">
+        <Separator className="mb-3" />
         <ConfigSummary config={pc.config} />
-        <p className="text-[10px] text-muted-foreground mt-2 font-mono">
-          ID: {pc.priceConfigId}
+        <p className="text-[10px] text-muted-foreground/60 mt-3 font-mono truncate">
+          {pc.priceConfigId}
         </p>
       </CardContent>
     </Card>
@@ -1083,38 +1096,50 @@ function TabPane({ entityType, entityOptions, entityMap, onAdd, onEdit, onToggle
     enabled: entityOptions.length > 0 || entityType === "cancellation" || entityType === "postponement",
   })
 
-  if (isLoading) {
-    return (
-      <div className="grid sm:grid-cols-2 gap-4">
-        {[1, 2].map(i => (
-          <Card key={i}><CardContent className="h-32 animate-pulse bg-muted/30 pt-6" /></Card>
-        ))}
-      </div>
-    )
-  }
-
-  if (!configs?.length) {
-    return (
-      <EmptyState
-        icon={Settings2}
-        title="No price configs"
-        message={`No pricing configured for ${entityType} yet. Create one to get started.`}
-        action={{ label: `Add ${entityType} Config`, onClick: onAdd }}
-      />
-    )
-  }
+  const meta = TAB_META[entityType]
 
   return (
-    <div className="grid sm:grid-cols-2 gap-4">
-      {configs.map(pc => (
-        <PriceConfigCard
-          key={pc.priceConfigId}
-          pc={pc}
-          entityName={entityMap.get(pc.relationships?.entityId) ?? pc.relationships?.entityId ?? "—"}
-          onEdit={onEdit}
-          onToggleStatus={onToggleStatus}
+    <div className="space-y-5">
+      {/* Per-tab header */}
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-sm text-muted-foreground">{meta.description}</p>
+        {!isLoading && !!configs?.length && (
+          <Button
+            size="sm"
+            onClick={onAdd}
+            className="shrink-0 bg-nfdc-primary hover:bg-nfdc-primary/90"
+          >
+            <Plus className="mr-1.5 h-3.5 w-3.5" /> Add Config
+          </Button>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div className="grid sm:grid-cols-2 gap-4">
+          {[1, 2].map(i => (
+            <Card key={i}><CardContent className="h-32 animate-pulse bg-muted/30 pt-6" /></Card>
+          ))}
+        </div>
+      ) : !configs?.length ? (
+        <EmptyState
+          icon={Settings2}
+          title="No price configs"
+          message={`No pricing configured for ${entityType} yet. Create one to get started.`}
+          action={{ label: "Add Config", onClick: onAdd }}
         />
-      ))}
+      ) : (
+        <div className="grid sm:grid-cols-2 gap-4">
+          {configs.map(pc => (
+            <PriceConfigCard
+              key={pc.priceConfigId}
+              pc={pc}
+              entityName={entityMap.get(pc.relationships?.entityId) ?? pc.relationships?.entityId ?? "—"}
+              onEdit={onEdit}
+              onToggleStatus={onToggleStatus}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -1124,14 +1149,14 @@ function TabPane({ entityType, entityOptions, entityMap, onAdd, onEdit, onToggle
 export default function PriceConfigList() {
   useEffect(() => { document.title = "NFDC Admin — Price Config" }, [])
 
-  const { user }    = useAuth()
-  const theaterId   = user?.theaterId
+  const { user } = useAuth()
+  const theaterId = user?.theaterId
   const queryClient = useQueryClient()
 
-  const [activeTab,      setActiveTab]      = useState("audi")
-  const [dialogOpen,     setDialogOpen]     = useState(false)
-  const [editingConfig,  setEditingConfig]  = useState(null)
-  const [statusTarget,   setStatusTarget]   = useState(null)
+  const [activeTab, setActiveTab] = useState("audi")
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingConfig, setEditingConfig] = useState(null)
+  const [statusTarget, setStatusTarget] = useState(null)
 
   // ── Audis — always fresh so newly created audis appear in entity selectors ──
   const { data: audisRaw } = useQuery({
@@ -1141,9 +1166,9 @@ export default function PriceConfigList() {
     staleTime: 0,
     refetchOnMount: "always",
   })
-  const allAudis    = Array.isArray(audisRaw?.data) ? audisRaw.data : []
+  const allAudis = Array.isArray(audisRaw?.data) ? audisRaw.data : []
   const audiOptions = allAudis.map(a => ({ id: a.audiId ?? a.id ?? a._id, name: a.name }))
-  const audiMap     = new Map(audiOptions.map(a => [a.id, a.name]))
+  const audiMap = new Map(audiOptions.map(a => [a.id, a.name]))
   // Full audi objects keyed by audiId — passed into the dialog for the info panel
   const audiDataMap = new Map(allAudis.map(a => [a.audiId ?? a.id ?? a._id, a]))
 
@@ -1160,7 +1185,7 @@ export default function PriceConfigList() {
     ...(groupedRaw?.ungrouped?.services ?? []),
   ]
   const serviceOptions = allServices.map(s => ({
-    id:   s.serviceId ?? s.id ?? s._id,
+    id: s.serviceId ?? s.id ?? s._id,
     name: s.name,
   }))
   const serviceMap = new Map(serviceOptions.map(s => [s.id, s.name]))
@@ -1198,55 +1223,41 @@ export default function PriceConfigList() {
 
   const handleToggleStatus = (pc) => {
     setStatusTarget({
-      id:       pc.priceConfigId,
-      name:     entityMapForTab(activeTab).get(pc.relationships?.entityId) ?? pc.relationships?.entityId,
+      id: pc.priceConfigId,
+      name: entityMapForTab(activeTab).get(pc.relationships?.entityId) ?? pc.relationships?.entityId,
       isActive: pc.lifecycle?.status === "active",
     })
   }
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Price Configuration"
-        action={{ label: "Add Config", icon: Plus, onClick: openCreate }}
-      />
+      <PageHeader title="Price Configuration" />
 
       <Tabs value={activeTab} onValueChange={v => { setActiveTab(v); setEditingConfig(null) }}>
-        <div className="flex gap-6 items-start">
-          {/* Sidebar nav */}
-          <TabsList className="flex-col h-auto w-52 shrink-0 rounded-xl border border-border bg-card p-2 gap-0.5 justify-start items-stretch shadow-sm">
-            <TabsTrigger
-              value="audi"
-              className="justify-start gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground w-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm hover:bg-muted hover:text-foreground data-[state=active]:hover:bg-primary transition-colors"
-            >
-              <Building2 className="h-4 w-4 shrink-0" />
-              Audi
-            </TabsTrigger>
-            <TabsTrigger
-              value="service"
-              className="justify-start gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground w-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm hover:bg-muted hover:text-foreground data-[state=active]:hover:bg-primary transition-colors"
-            >
-              <Layers className="h-4 w-4 shrink-0" />
-              Service
-            </TabsTrigger>
-            <TabsTrigger
-              value="cancellation"
-              className="justify-start gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground w-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm hover:bg-muted hover:text-foreground data-[state=active]:hover:bg-primary transition-colors"
-            >
-              <Ban className="h-4 w-4 shrink-0" />
-              Cancellation
-            </TabsTrigger>
-            <TabsTrigger
-              value="postponement"
-              className="justify-start gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground w-full data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm hover:bg-muted hover:text-foreground data-[state=active]:hover:bg-primary transition-colors"
-            >
-              <CalendarClock className="h-4 w-4 shrink-0" />
-              Postponement
-            </TabsTrigger>
-          </TabsList>
+        {/* Tab bar — full-width underline style */}
+        <div className="flex flex-col">
+          <div className="border-b border-border overflow-x-auto ">
+            <TabsList className="flex h-auto gap-0 rounded-none bg-transparent p-0">
+              {[
+                { value: "audi", label: "Audi", Icon: Building2 },
+                { value: "service", label: "Service", Icon: Layers },
+                { value: "cancellation", label: "Cancellation", Icon: Ban },
+                { value: "postponement", label: "Postponement", Icon: CalendarClock },
+              ].map(({ value, label, Icon }) => (
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  className="flex items-center gap-2 rounded-none border-b-2 border-transparent -mb-px bg-transparent px-5 pb-3 pt-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:border-nfdc-primary data-[state=active]:bg-transparent data-[state=active]:text-nfdc-primary data-[state=active]:shadow-none"
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
 
-          {/* Content area */}
-          <div className="flex-1 min-w-0">
+          {/* Full-width content */}
+          <div className="mt-6">
             {TABS.map(tab => (
               <TabsContent key={tab} value={tab} className="mt-0">
                 <TabPane
@@ -1260,7 +1271,9 @@ export default function PriceConfigList() {
               </TabsContent>
             ))}
           </div>
+
         </div>
+
       </Tabs>
 
       {/* Create / Edit dialog */}
@@ -1292,7 +1305,7 @@ export default function PriceConfigList() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => statusMutation.mutate({
-                id:     statusTarget.id,
+                id: statusTarget.id,
                 status: statusTarget.isActive ? "inactive" : "active",
               })}
               className={statusTarget?.isActive ? "bg-destructive hover:bg-destructive/90" : ""}

@@ -1,11 +1,11 @@
 import api from "./axiosInstance"
 
 // ── Services ──────────────────────────────────────────────────────────────────
-// GET /services returns { sections:[...], ungrouped:{...} }
-// Pass audiId OR theaterId; omit status to get all (active + inactive) for admin.
+// GET /admin/services returns { sections:[...], ungrouped:{...} }
+// Pass audiId OR theaterId; omit status to get all (active + inactive).
 
 export const listServicesGrouped = (params) =>
-  api.get("/services", { params })
+  api.get("/admin/services", { params })
 
 export const createService = (data) =>
   api.post("/admin/services", data)

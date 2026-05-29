@@ -112,11 +112,12 @@ export default function BlockManager() {
   const [conflictWarning, setConflictWarning] = useState(null)
 
   // ── Queries ──────────────────────────────────────────────────────────────────
-  const { data: audis } = useQuery({
+  const { data: audisRaw } = useQuery({
     queryKey: ["audis", theaterId],
-    queryFn:  () => listAudis(theaterId).then(r => parseList(r.data.data)),
+    queryFn:  () => listAudis(theaterId).then(r => r.data.data),
     enabled:  !!theaterId,
   })
+  const audis = Array.isArray(audisRaw?.data) ? audisRaw.data : Array.isArray(audisRaw) ? audisRaw : []
 
   const { data: blocksRaw, isLoading: blocksLoading } = useQuery({
     queryKey: ["blocks", selectedAudiId],
