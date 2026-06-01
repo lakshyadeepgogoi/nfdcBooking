@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { useForm, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -10,7 +10,7 @@ import {
 } from "date-fns"
 import {
   ArrowLeft, Loader2, CheckCircle2, XCircle, Clock, Info,
-  ChevronLeft, ChevronRight, CalendarDays, CreditCard, BadgePercent,
+  ChevronLeft, ChevronRight, CalendarDays, CreditCard, BadgePercent, Receipt,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -30,9 +30,10 @@ import { listSlots } from "@/api/slots"
 import { listServicesGrouped } from "@/api/services"
 import { manualBookingOffline, manualBookingWaived } from "@/api/bookings"
 import { lookupUser } from "@/api/users"
-import { getAudiCalendar } from "@/api/availability"
+import { getAudiCalendar, previewFee } from "@/api/availability"
 import { parseList } from "@/utils/parseList"
 import { toAPIDate } from "@/utils/formatDate"
+import { formatINR } from "@/utils/formatCurrency"
 import { cn } from "@/lib/utils"
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -362,12 +363,13 @@ function AvailabilityCalendar({ control, audiId }) {
 // ─── TimeFields — adapts to audi mode ─────────────────────────────────────────
 
 function TimeFields({ control, setValue, audi }) {
-  const mode    = audi?.config?.slotMode
-  const audiId  = audi?.audiId ?? audi?.id ?? audi?._id
-  const opStart = audi?.config?.operationalHours?.start ?? ""
-  const opEnd   = audi?.config?.operationalHours?.end   ?? ""
+  const mode      = audi?.config?.slotMode
+  const audiId    = audi?.audiId ?? audi?.id ?? audi?._id
+  const opStart   = audi?.config?.operationalHours?.start ?? ""
+  const opEnd     = audi?.config?.operationalHours?.end   ?? ""
   const durations = audi?.config?.bookingDurations ?? []
 
+  // ── All hooks unconditionally at the top ──────────────────────────────────
   const { data: slotsRaw, isLoading: slotsLoading } = useQuery({
     queryKey: ["slots", audiId],
     queryFn:  () => listSlots(audiId).then(r => {
@@ -379,23 +381,77 @@ function TimeFields({ control, setValue, audi }) {
   })
   const activeSlots = (slotsRaw ?? []).filter(s => s.lifecycle?.status === "active")
 
-  const startTime = useWatch({ control, name: "startTime" }) ?? ""
+  const startTime    = useWatch({ control, name: "startTime" }) ?? ""
+  const endTime      = useWatch({ control, name: "endTime"   }) ?? ""
+  const selectedDate = useWatch({ control, name: "date"      })
 
+  // Calendar data — shares cache with AvailabilityCalendar (same queryKey)
+  const monthStr = selectedDate instanceof Date ? format(selectedDate, "yyyy-MM") : null
+  const dateStr  = selectedDate instanceof Date ? toAPIDate(selectedDate)          : null
+
+  const { data: calData } = useQuery({
+    queryKey: ["audi-calendar", audiId, monthStr],
+    queryFn:  () => getAudiCalendar(audiId, monthStr).then(r => r.data.data),
+    enabled:  !!audiId && !!monthStr && mode === "flexible",
+    staleTime: 60_000,
+  })
+
+  const opStartMins = opStart ? toMins(opStart) : 0
+  const opEndMins   = opEnd   ? toMins(opEnd)   : 24 * 60
+
+  // Booked windows for the selected date
+  const bookedWindows = useMemo(() => {
+    const raw = calData?.calendar?.[dateStr]?.bookedWindows ?? []
+    return raw
+      .map(w => ({ start: toMins(w.startTime), end: toMins(w.endTime) }))
+      .sort((a, b) => a.start - b.start)
+  }, [calData, dateStr])
+
+  // Available free windows = gaps between booked windows within operational hours
+  const availableWindows = useMemo(() => {
+    if (!dateStr) return opStart ? [{ start: opStartMins, end: opEndMins }] : []
+    const windows = []
+    let cursor = opStartMins
+    for (const bw of bookedWindows) {
+      if (cursor < bw.start) windows.push({ start: cursor, end: bw.start })
+      cursor = Math.max(cursor, bw.end)
+    }
+    if (cursor < opEndMins) windows.push({ start: cursor, end: opEndMins })
+    return windows
+  }, [dateStr, opStartMins, opEndMins, bookedWindows])
+
+  // Auto-set start time to first free window when date is selected/changed
+  useEffect(() => {
+    if (mode !== "flexible" || !dateStr) return
+    const first = availableWindows[0]
+    if (first) {
+      setValue("startTime", fromMins(first.start), { shouldValidate: false })
+      setValue("endTime",   "",                    { shouldValidate: false })
+    }
+  }, [dateStr]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Returns true if startT + durationH hours fits entirely within a free window
+  const isSlotFree = (startT, durationH) => {
+    const sMin = toMins(startT)
+    const eMin = sMin + durationH * 60
+    if (eMin > opEndMins) return false
+    return !bookedWindows.some(bw => sMin < bw.end && eMin > bw.start)
+  }
+
+  // ─── No audi ─────────────────────────────────────────────────────────────
   if (!audi) return null
 
-  // ── Fixed mode: checkbox multi-slot selector ──────────────────────────────
+  // ─── Fixed mode ───────────────────────────────────────────────────────────
   if (mode === "fixed") {
     return (
       <FormField control={control} name="slotIds" render={({ field }) => {
         const selectedIds = Array.isArray(field.value) ? field.value : []
-
         const toggle = (id) => {
           const next = selectedIds.includes(id)
             ? selectedIds.filter(x => x !== id)
             : [...selectedIds, id]
           field.onChange(next)
         }
-
         return (
           <FormItem>
             <FormLabel>
@@ -420,18 +476,14 @@ function TimeFields({ control, setValue, audi }) {
                     const checked = selectedIds.includes(id)
                     const hours   = s.config?.hours
                     return (
-                      <div
-                        key={id}
+                      <div key={id}
                         className={`flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer transition-colors hover:bg-accent/10 ${
                           checked ? "bg-nfdc-accent/5 border border-nfdc-accent/30" : ""
                         }`}
                         onClick={() => toggle(id)}
                       >
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={() => toggle(id)}
-                          onClick={e => e.stopPropagation()}
-                        />
+                        <Checkbox checked={checked} onCheckedChange={() => toggle(id)}
+                          onClick={e => e.stopPropagation()} />
                         <div className="flex-1 min-w-0">
                           <span className="font-medium text-sm">{s.name}</span>
                           <span className="text-muted-foreground text-xs ml-2">
@@ -459,59 +511,140 @@ function TimeFields({ control, setValue, audi }) {
     )
   }
 
-  // ── Flexible mode: time inputs + duration shortcuts ───────────────────────
+  // ─── Flexible mode ────────────────────────────────────────────────────────
+  const useDurationChips = durations.length > 0
+  const activeDuration = useDurationChips && startTime && endTime
+    ? durations.find(d => toMins(startTime) + d * 60 === toMins(endTime)) ?? null
+    : null
+
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-4">
-        <FormField control={control} name="startTime" render={({ field }) => (
-          <FormItem>
-            <FormLabel>
-              Start Time
-              {opStart && <span className="text-muted-foreground font-normal ml-1">(from {opStart})</span>}
-            </FormLabel>
-            <FormControl>
-              <Input type="time" min={opStart || undefined} max={opEnd || undefined} {...field} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )} />
-        <FormField control={control} name="endTime" render={({ field }) => (
-          <FormItem>
-            <FormLabel>
-              End Time
-              {opEnd && <span className="text-muted-foreground font-normal ml-1">(until {opEnd})</span>}
-            </FormLabel>
-            <FormControl>
-              <Input type="time" min={startTime || opStart || undefined} max={opEnd || undefined} {...field} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )} />
-      </div>
+      {useDurationChips ? (
+        <div className="space-y-3">
+          {/* Start time — with available-window hint */}
+          <FormField control={control} name="startTime" render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                Start Time
+                {opStart && <span className="text-muted-foreground font-normal ml-1">(from {opStart})</span>}
+              </FormLabel>
+              <FormControl>
+                <Input
+                  type="time"
+                  min={opStart || undefined}
+                  max={opEnd   || undefined}
+                  {...field}
+                  onChange={e => {
+                    field.onChange(e)
+                    setValue("endTime", "", { shouldValidate: false })
+                  }}
+                />
+              </FormControl>
+              {/* Show free windows when there's partial/booked data */}
+              {dateStr && availableWindows.length > 0 && bookedWindows.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Free:{" "}
+                  {availableWindows.map((w, i) => (
+                    <span key={i} className="font-medium text-foreground">
+                      {i > 0 && " · "}{fromMins(w.start)}–{fromMins(w.end)}
+                    </span>
+                  ))}
+                </p>
+              )}
+              {dateStr && availableWindows.length === 0 && (
+                <p className="text-xs text-destructive">No available time left on this date</p>
+              )}
+              <FormMessage />
+            </FormItem>
+          )} />
 
-      {durations.length > 0 && (
-        <div className="space-y-1.5">
-          <p className="text-xs text-muted-foreground flex items-center gap-1">
-            <Clock className="h-3 w-3" /> Quick duration — set start time first, then click:
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {durations.map(d => (
-              <Badge
-                key={d}
-                variant="outline"
-                className="cursor-pointer hover:bg-nfdc-accent/10 hover:border-nfdc-accent select-none"
-                onClick={() => {
-                  if (!startTime) { toast.error("Set start time first"); return }
-                  const end        = toMins(startTime) + d * 60
-                  const opEndMins  = opEnd ? toMins(opEnd) : Infinity
-                  if (end > opEndMins) { toast.error(`${d}h exceeds closing time (${opEnd})`); return }
-                  setValue("endTime", fromMins(end), { shouldValidate: true })
-                }}
-              >
-                {d}h
-              </Badge>
-            ))}
+          {/* Hidden end time — stays registered for validation */}
+          <FormField control={control} name="endTime" render={({ field }) => (
+            <input type="hidden" {...field} />
+          )} />
+
+          {/* Duration chips */}
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+              <Clock className="h-3 w-3" /> Select duration
+              {opEnd && <span>(closes {opEnd})</span>}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {durations.map(d => {
+                const isActive   = activeDuration === d
+                const base       = startTime || opStart
+                const endMins    = base ? toMins(base) + d * 60 : null
+                const exceeds    = endMins !== null && endMins > opEndMins
+                const conflicts  = !!base && !!dateStr && !isSlotFree(base, d)
+                const isDisabled = exceeds || conflicts
+
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    disabled={isDisabled}
+                    title={exceeds ? "Exceeds closing time" : conflicts ? "Conflicts with an existing booking" : undefined}
+                    onClick={() => {
+                      const base = startTime || opStart
+                      if (!base) { toast.error("No start time available"); return }
+                      const computedEnd = toMins(base) + d * 60
+                      if (computedEnd > opEndMins) { toast.error(`${d}h exceeds closing time (${opEnd})`); return }
+                      if (dateStr && !isSlotFree(base, d)) { toast.error("This duration conflicts with an existing booking"); return }
+                      if (!startTime && opStart) setValue("startTime", opStart, { shouldValidate: true })
+                      setValue("endTime", fromMins(computedEnd), { shouldValidate: true })
+                    }}
+                    className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                      isActive
+                        ? "bg-nfdc-primary text-white border-nfdc-primary"
+                        : conflicts
+                        ? "border-destructive/40 text-destructive/60"
+                        : "bg-background border-border hover:border-nfdc-primary hover:text-nfdc-primary"
+                    }`}
+                  >
+                    {d}h
+                  </button>
+                )
+              })}
+            </div>
+
+            {activeDuration && endTime && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <CheckCircle2 className="h-3 w-3 text-green-500" />
+                {activeDuration}h session · ends at <span className="font-medium text-foreground">{endTime}</span>
+              </p>
+            )}
+            {!startTime && !opStart && (
+              <p className="text-xs text-muted-foreground">Set start time to pick a duration</p>
+            )}
           </div>
+        </div>
+      ) : (
+        // Manual mode — both inputs
+        <div className="grid grid-cols-2 gap-4">
+          <FormField control={control} name="startTime" render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                Start Time
+                {opStart && <span className="text-muted-foreground font-normal ml-1">(from {opStart})</span>}
+              </FormLabel>
+              <FormControl>
+                <Input type="time" min={opStart || undefined} max={opEnd || undefined} {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+          <FormField control={control} name="endTime" render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                End Time
+                {opEnd && <span className="text-muted-foreground font-normal ml-1">(until {opEnd})</span>}
+              </FormLabel>
+              <FormControl>
+                <Input type="time" min={startTime || opStart || undefined} max={opEnd || undefined} {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
         </div>
       )}
     </div>
@@ -630,10 +763,99 @@ function SectionHeader({ label }) {
   )
 }
 
+// ─── FeeSummary ───────────────────────────────────────────────────────────────
+
+function FeeSummary({ data, isLoading }) {
+  if (isLoading) {
+    return (
+      <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="flex justify-between">
+            <div className={`h-3 bg-muted rounded animate-pulse ${i === 3 ? "w-1/3" : "w-1/2"}`} />
+            <div className="h-3 bg-muted rounded animate-pulse w-16" />
+          </div>
+        ))}
+      </div>
+    )
+  }
+  if (!data) return null
+
+  const hasDeposit = (data.depositAmount ?? 0) > 0
+  const taxPct     = data.breakdown?.tax?.rate != null
+    ? `${(data.breakdown.tax.rate * 100).toFixed(0)}%` : null
+
+  return (
+    <div className="rounded-xl border border-nfdc-primary/20 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-4 py-2.5 bg-nfdc-primary/5 border-b border-nfdc-primary/20">
+        <Receipt className="h-3.5 w-3.5 text-nfdc-primary" />
+        <p className="text-xs font-semibold text-nfdc-primary uppercase tracking-wide">Fee Summary</p>
+      </div>
+
+      <div className="p-4 space-y-1.5 text-sm">
+        {/* Audi */}
+        <div className="flex justify-between">
+          <span className="text-muted-foreground">
+            {data.breakdown?.audi?.label}
+            {data.breakdown?.audi?.hours ? ` · ${data.breakdown.audi.hours}h` : ""}
+          </span>
+          <span className="tabular-nums font-medium">{formatINR(data.baseAmount ?? 0)}</span>
+        </div>
+
+        {/* Services */}
+        {(data.breakdown?.services ?? []).filter(s => s.amount > 0).map((s, i) => (
+          <div key={i} className="flex justify-between text-xs text-muted-foreground pl-3">
+            <span>{s.name}</span>
+            <span className="tabular-nums">{formatINR(s.amount)}</span>
+          </div>
+        ))}
+
+        {/* Tax */}
+        {(data.taxAmount ?? 0) > 0 && (
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span>GST{taxPct ? ` (${taxPct})` : ""}</span>
+            <span className="tabular-nums">{formatINR(data.taxAmount)}</span>
+          </div>
+        )}
+
+        <Separator className="my-1" />
+
+        {/* Booking cost */}
+        <div className="flex justify-between font-semibold">
+          <span>Booking Cost</span>
+          <span className="tabular-nums">{formatINR(data.totalAmount ?? 0)}</span>
+        </div>
+
+        {/* Security deposit + grand total */}
+        {hasDeposit ? (
+          <>
+            <div className="flex justify-between text-amber-700 text-xs">
+              <span>Security Deposit
+                {data.depositType === "percentage" && data.breakdown?.deposit?.percentage
+                  ? ` (${data.breakdown.deposit.percentage}%)`
+                  : data.depositType === "fixed" ? " (Fixed)" : ""}
+              </span>
+              <span className="tabular-nums">+ {formatINR(data.depositAmount)}</span>
+            </div>
+            <Separator className="my-1" />
+            <div className="flex justify-between text-base font-bold text-nfdc-primary">
+              <span>Amount Charged</span>
+              <span className="tabular-nums">{formatINR(data.amountCharged ?? 0)}</span>
+            </div>
+          </>
+        ) : (
+          <p className="text-xs text-muted-foreground">No security deposit required</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── BookingForm ──────────────────────────────────────────────────────────────
 
 function BookingForm({ schema, onSubmit, isPending, audiList, submitLabel }) {
   const [userVerified, setUserVerified] = useState(false)
+  const queryClient = useQueryClient()
 
   const form = useForm({
     resolver: zodResolver(schema),
@@ -646,9 +868,56 @@ function BookingForm({ schema, onSubmit, isPending, audiList, submitLabel }) {
     },
   })
 
-  const audiId      = useWatch({ control: form.control, name: "audiId" })
-  const bookingType = useWatch({ control: form.control, name: "bookingType" })
-  const selectedAudi = audiList.find(a => (a.audiId ?? a.id ?? a._id) === audiId) ?? null
+  const audiId          = useWatch({ control: form.control, name: "audiId"          })
+  const bookingType     = useWatch({ control: form.control, name: "bookingType"     })
+  const slotIds         = useWatch({ control: form.control, name: "slotIds"         }) ?? []
+  const startTime       = useWatch({ control: form.control, name: "startTime"       }) ?? ""
+  const endTime         = useWatch({ control: form.control, name: "endTime"         }) ?? ""
+  const selectedSvcs    = useWatch({ control: form.control, name: "selectedServices"}) ?? []
+  const selectedAudi    = audiList.find(a => (a.audiId ?? a.id ?? a._id) === audiId) ?? null
+  const mode            = selectedAudi?.config?.slotMode
+
+  // Include mandatory services (they're auto-added at submit but needed for accurate preview)
+  const svcsCache    = queryClient.getQueryData(["services-grouped", audiId])
+  const mandatoryIds = [
+    ...(svcsCache?.sections?.flatMap(s => s.services ?? []) ?? []),
+    ...(svcsCache?.ungrouped?.services ?? []),
+  ].filter(s => s.config?.isMandatory).map(s => s.serviceId)
+  const previewServices = [...new Set([...selectedSvcs, ...mandatoryIds])]
+
+  const canPreview = !!audiId && !!bookingType && (
+    (mode === "fixed"    && slotIds.length > 0) ||
+    (mode === "flexible" && !!startTime && !!endTime)
+  )
+
+  // Debounce the preview params — only fire the API after 600 ms of no changes
+  const [debouncedParams, setDebouncedParams] = useState(null)
+  useEffect(() => {
+    if (!canPreview) { setDebouncedParams(null); return }
+    const t = setTimeout(() => {
+      setDebouncedParams({
+        audiId, bookingType, mode,
+        slotIds: [...slotIds].sort().join(","),
+        startTime, endTime,
+        services: [...previewServices].sort().join(","),
+      })
+    }, 600)
+    return () => clearTimeout(t)
+  }, [canPreview, audiId, bookingType, mode, slotIds.join(), startTime, endTime, previewServices.join()]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const { data: feePreview, isFetching: feeLoading } = useQuery({
+    queryKey: ["fee-preview", debouncedParams],
+    queryFn: () => previewFee(audiId, {
+      bookingType,
+      ...(mode === "fixed" && slotIds.length === 1 ? { slotId:  slotIds[0] } : {}),
+      ...(mode === "fixed" && slotIds.length >  1  ? { slotIds }             : {}),
+      ...(mode === "flexible"                      ? { startTime, endTime }  : {}),
+      selectedServices: previewServices,
+    }).then(r => r.data.data),
+    enabled: !!debouncedParams,
+    staleTime: 5 * 60 * 1000, // cache 5 min — same inputs always produce same fees
+    retry: false,
+  })
 
   // Reset slot/time/service fields when audi changes (guarded to avoid infinite loop).
   // form is a stable ref from useForm — safe to omit from deps.
@@ -704,6 +973,11 @@ function BookingForm({ schema, onSubmit, isPending, audiList, submitLabel }) {
           audiId={audiId || null}
           bookingType={bookingType}
         />
+
+        {/* Live fee preview — shown once enough fields are filled */}
+        {canPreview && (
+          <FeeSummary data={feePreview} isLoading={feeLoading} />
+        )}
 
         <SectionHeader label="Payment & Notes" />
         <FormTextarea control={form.control} name="notes" label="Notes (optional)" rows={2} />
