@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from "react-router-dom"
 import TheaterAdminLayout from "@/layouts/TheaterAdminLayout"
+import NotFound from "@/pages/NotFound"
 import Dashboard from "@/pages/theater-admin/Dashboard"
 import TheaterSettings from "@/pages/theater-admin/TheaterSettings"
 import AudiList from "@/pages/theater-admin/audi/AudiList"
@@ -45,6 +46,7 @@ export default function TheaterAdminRoutes() {
         <Route path="notifications" element={<Notifications />} />
         <Route path="profile" element={<Profile />} />
       </Route>
+      <Route path="*" element={<NotFound />} />
     </Routes>
   )
 }

@@ -195,7 +195,7 @@ export default function CrossTheaterBookings() {
             variant="ghost"
             size="icon"
             className="h-8 w-8"
-            onClick={e => { e.stopPropagation(); navigate(`/admin/bookings/${id}`) }}
+            onClick={e => { e.stopPropagation(); navigate(`/super/bookings/${id}`) }}
           >
             <Eye className="h-4 w-4" />
           </Button>
@@ -328,7 +328,7 @@ export default function CrossTheaterBookings() {
         isLoading={isLoading}
         emptyMessage="No bookings found"
         emptyIcon={Ticket}
-        onRowClick={row => navigate(`/admin/bookings/${row.original.bookingId ?? row.original._id}`)}
+        onRowClick={row => navigate(`/super/bookings/${row.original.bookingId ?? row.original._id}`)}
         pagination={{
           page:           applied.page,
           pageSize:       applied.limit,

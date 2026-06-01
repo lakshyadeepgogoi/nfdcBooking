@@ -3,13 +3,18 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, Plus, X, Upload, Image as ImageIcon, Clock, User, ChevronDown, ChevronUp } from "lucide-react"
+import {
+  Loader2, Plus, X, Upload, Image as ImageIcon,
+  Clock, User, ChevronDown, ChevronUp,
+  Settings2, Star, FileText, MapPin, Phone, Mail,
+} from "lucide-react"
 import { format } from "date-fns"
 import { toast } from "sonner"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Card, CardContent } from "@/components/ui/card"
 import { RichTextEditor } from "@/components/ui/rich-text-editor"
 import { Separator } from "@/components/ui/separator"
 import { Label } from "@/components/ui/label"
@@ -22,6 +27,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import PageHeader from "@/components/common/PageHeader"
+import StatusBadge from "@/components/common/StatusBadge"
 import FormInput from "@/components/forms/FormInput"
 import EmptyState from "@/components/common/EmptyState"
 import LoadingSpinner from "@/components/common/LoadingSpinner"
@@ -45,6 +51,17 @@ const infoSchema = z.object({
   email:   z.union([z.string().email("Enter a valid email"), z.literal("")]).optional(),
 })
 
+// ─── Shared helpers ────────────────────────────────────────────────────────────
+
+function SectionHeader({ label }) {
+  return (
+    <div className="flex items-center gap-3 pt-1">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground shrink-0">{label}</p>
+      <div className="flex-1 h-px bg-border" />
+    </div>
+  )
+}
+
 // ─── Tab: Info ────────────────────────────────────────────────────────────────
 
 function InfoTab({ theater, theaterId, onSaved }) {
@@ -64,17 +81,15 @@ function InfoTab({ theater, theaterId, onSaved }) {
   })
 
   useEffect(() => {
-    if (theater) {
-      form.reset({
-        name:    theater.name ?? "",
-        address: details.address ?? "",
-        city:    details.city ?? "",
-        state:   details.state ?? "",
-        pincode: details.pincode ?? "",
-        phone:   details.phone ?? "",
-        email:   details.email ?? "",
-      })
-    }
+    if (theater) form.reset({
+      name:    theater.name ?? "",
+      address: details.address ?? "",
+      city:    details.city ?? "",
+      state:   details.state ?? "",
+      pincode: details.pincode ?? "",
+      phone:   details.phone ?? "",
+      email:   details.email ?? "",
+    })
   }, [theater, form])
 
   const mutation = useMutation({
@@ -94,22 +109,30 @@ function InfoTab({ theater, theaterId, onSaved }) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))} className="space-y-4 max-w-2xl">
+      <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))} className="space-y-6 max-w-2xl">
+        <SectionHeader label="Identity" />
         <FormInput control={form.control} name="name" label="Theater Name" />
+
+        <SectionHeader label="Location" />
         <FormInput control={form.control} name="address" label="Address" placeholder="123 Main Street" />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <FormInput control={form.control} name="city"    label="City" />
           <FormInput control={form.control} name="state"   label="State" />
           <FormInput control={form.control} name="pincode" label="Pincode" />
         </div>
+
+        <SectionHeader label="Contact" />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FormInput control={form.control} name="phone" label="Phone" />
           <FormInput control={form.control} name="email" label="Email" type="email" />
         </div>
-        <Button type="submit" disabled={mutation.isPending} className="bg-nfdc-primary hover:bg-nfdc-primary/90">
-          {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Save Changes
-        </Button>
+
+        <div className="pt-2">
+          <Button type="submit" disabled={mutation.isPending} className="bg-nfdc-primary hover:bg-nfdc-primary/90">
+            {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save Changes
+          </Button>
+        </div>
       </form>
     </Form>
   )
@@ -146,8 +169,8 @@ function FacilitiesTab({ theater, theaterId, onSaved }) {
         amenities,
         parking: {
           available: parkingAvailable,
-          capacity: parkingAvailable && parkingCapacity !== "" ? Number(parkingCapacity) : undefined,
-          notes: parkingNotes || undefined,
+          capacity:  parkingAvailable && parkingCapacity !== "" ? Number(parkingCapacity) : undefined,
+          notes:     parkingNotes || undefined,
         },
       },
     }),
@@ -157,28 +180,29 @@ function FacilitiesTab({ theater, theaterId, onSaved }) {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      {/* Amenities */}
+      <SectionHeader label="Amenities" />
       <div className="space-y-3">
-        <Label className="text-sm font-medium">Amenities</Label>
-        <div className="flex flex-wrap gap-2 min-h-[36px]">
-          {amenities.length === 0 && <span className="text-sm text-muted-foreground">No amenities added</span>}
-          {amenities.map((a) => (
-            <Badge key={a} variant="secondary" className="gap-1 pr-1">
-              {a}
-              <button type="button" onClick={() => setAmenities(x => x.filter(i => i !== a))}
-                className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5">
-                <X className="h-3 w-3" />
-              </button>
-            </Badge>
-          ))}
+        <div className="flex flex-wrap gap-2 min-h-[40px] p-3 rounded-lg border bg-muted/20">
+          {amenities.length === 0
+            ? <span className="text-sm text-muted-foreground">No amenities added yet</span>
+            : amenities.map((a) => (
+              <Badge key={a} variant="secondary" className="gap-1 pr-1">
+                {a}
+                <button type="button" onClick={() => setAmenities(x => x.filter(i => i !== a))}
+                  className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5">
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            ))
+          }
         </div>
         <div className="flex gap-2">
           <Input
-            placeholder="Add amenity (e.g. 4K Projection)"
+            placeholder="Add amenity (e.g. 4K Projection, AC)"
             value={amenityInput}
             onChange={(e) => setAmenityInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addAmenity() } }}
-            className="max-w-xs"
+            className="max-w-sm"
           />
           <Button type="button" variant="outline" size="sm" onClick={addAmenity}>
             <Plus className="h-4 w-4 mr-1" /> Add
@@ -186,36 +210,43 @@ function FacilitiesTab({ theater, theaterId, onSaved }) {
         </div>
       </div>
 
-      {/* Parking */}
-      <div className="space-y-4 border rounded-lg p-4">
-        <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium">Parking</Label>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">{parkingAvailable ? "Available" : "Not available"}</span>
-            <Switch checked={parkingAvailable} onCheckedChange={setParkingAvailable} />
-          </div>
-        </div>
-        {parkingAvailable && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Capacity (optional)</Label>
-              <Input type="number" placeholder="e.g. 120" value={parkingCapacity}
-                onChange={(e) => setParkingCapacity(e.target.value)} />
+      <SectionHeader label="Parking" />
+      <Card>
+        <CardContent className="p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Parking Available</p>
+              <p className="text-xs text-muted-foreground">Toggle to indicate parking at your venue</p>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Notes (optional)</Label>
-              <Input placeholder="e.g. Basement parking" value={parkingNotes}
-                onChange={(e) => setParkingNotes(e.target.value)} />
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">{parkingAvailable ? "Yes" : "No"}</span>
+              <Switch checked={parkingAvailable} onCheckedChange={setParkingAvailable} />
             </div>
           </div>
-        )}
-      </div>
+          {parkingAvailable && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Capacity (optional)</Label>
+                <Input type="number" placeholder="e.g. 120 vehicles" value={parkingCapacity}
+                  onChange={(e) => setParkingCapacity(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Notes (optional)</Label>
+                <Input placeholder="e.g. Basement, Level B2" value={parkingNotes}
+                  onChange={(e) => setParkingNotes(e.target.value)} />
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}
-        className="bg-nfdc-primary hover:bg-nfdc-primary/90">
-        {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Save Facilities
-      </Button>
+      <div className="pt-2">
+        <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}
+          className="bg-nfdc-primary hover:bg-nfdc-primary/90">
+          {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Save Facilities
+        </Button>
+      </div>
     </div>
   )
 }
@@ -267,12 +298,12 @@ function ImagesTab({ theater, theaterId, onSaved }) {
 
   return (
     <div className="space-y-5">
-      {keepUrls.length === 0 && newFiles.length === 0 && (
+      {totalCount === 0 && (
         <EmptyState icon={ImageIcon} title="No images" message="Upload images using the button below." />
       )}
 
       {totalCount > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {keepUrls.map((src) => (
             <div key={src} className="relative group aspect-video rounded-lg overflow-hidden border bg-muted">
               <img src={src} alt="Theater" className="w-full h-full object-cover" />
@@ -307,15 +338,16 @@ function ImagesTab({ theater, theaterId, onSaved }) {
           {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Save Images
         </Button>
-        {totalCount > 0 && <span className="text-sm text-muted-foreground">{totalCount} image{totalCount !== 1 ? "s" : ""}</span>}
+        {totalCount > 0 && (
+          <span className="text-sm text-muted-foreground">{totalCount} image{totalCount !== 1 ? "s" : ""}</span>
+        )}
       </div>
-
       <p className="text-xs text-muted-foreground">Accepted: JPEG, PNG, WebP · Max 5 MB · Up to 10 images</p>
     </div>
   )
 }
 
-// ─── Tab: T&C ──────────────────────────────────────────────────────────────────
+// ─── T&C history entry ────────────────────────────────────────────────────────
 
 function HistoryEntry({ entry }) {
   const [open, setOpen] = useState(false)
@@ -327,7 +359,7 @@ function HistoryEntry({ entry }) {
         className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/40 transition-colors"
       >
         <div className="flex items-center gap-3 min-w-0">
-          <Badge variant="outline" className="shrink-0">v{entry.version}</Badge>
+          <Badge variant="outline" className="shrink-0 font-mono">v{entry.version}</Badge>
           <div className="flex flex-col gap-0.5 min-w-0">
             {entry.publishedAt && (
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -361,8 +393,10 @@ function HistoryEntry({ entry }) {
   )
 }
 
+// ─── Tab: T&C ─────────────────────────────────────────────────────────────────
+
 function TnCTab({ theater, theaterId, onSaved }) {
-  const tnc = theater?.details?.tnc ?? {}
+  const tnc     = theater?.details?.tnc ?? {}
   const history = [...(tnc.history ?? [])].reverse()
 
   const [title,         setTitle]        = useState(tnc.title ?? "")
@@ -400,12 +434,9 @@ function TnCTab({ theater, theaterId, onSaved }) {
       {/* ── Editor ── */}
       <div className="xl:col-span-2 space-y-5">
         {/* Status row */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg bg-muted/30 border">
           <Badge variant="outline" className="font-mono">v{tnc.version ?? 1}</Badge>
-          <Badge
-            variant={tnc.status === "published" ? "default" : "secondary"}
-            className="capitalize"
-          >
+          <Badge variant={tnc.status === "published" ? "default" : "secondary"} className="capitalize">
             {tnc.status ?? "draft"}
           </Badge>
           {tnc.effectiveFrom && (
@@ -425,7 +456,7 @@ function TnCTab({ theater, theaterId, onSaved }) {
           />
         </div>
 
-        {/* Effective from */}
+        {/* Effective From */}
         <div className="space-y-1.5">
           <Label className="text-xs font-medium text-muted-foreground">Effective From (optional)</Label>
           <Popover>
@@ -438,7 +469,16 @@ function TnCTab({ theater, theaterId, onSaved }) {
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-[300px] p-0">
-              <Calendar mode="single" selected={effectiveFrom} onSelect={setEffectiveFrom} className="w-full [--cell-size:2.25rem]" captionLayout="dropdown" fromYear={2020} toYear={2035} initialFocus />
+              <Calendar
+                mode="single"
+                selected={effectiveFrom}
+                onSelect={setEffectiveFrom}
+                className="w-full [--cell-size:2.25rem]"
+                captionLayout="dropdown"
+                fromYear={2020}
+                toYear={2035}
+                initialFocus
+              />
             </PopoverContent>
           </Popover>
         </div>
@@ -487,7 +527,7 @@ function TnCTab({ theater, theaterId, onSaved }) {
           <div className="border border-dashed border-border rounded-lg px-4 py-8 text-center">
             <Clock className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
             <p className="text-sm text-muted-foreground">No published versions yet.</p>
-            <p className="text-xs text-muted-foreground mt-1">History appears here after publishing.</p>
+            <p className="text-xs text-muted-foreground mt-1">History appears after publishing.</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -498,7 +538,6 @@ function TnCTab({ theater, theaterId, onSaved }) {
         )}
       </div>
 
-      {/* Publish confirm */}
       <AlertDialog open={publishOpen} onOpenChange={setPublishOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -535,11 +574,12 @@ export default function TheaterSettings() {
 
   const { data: theaterRaw, isLoading } = useQuery({
     queryKey: ["theater", theaterId],
-    queryFn: () => getTheaterProfile(theaterId).then((r) => r.data.data),
-    enabled: !!theaterId,
+    queryFn:  () => getTheaterProfile(theaterId).then((r) => r.data.data),
+    enabled:  !!theaterId,
   })
 
   const theater = theaterRaw?.theater ?? theaterRaw
+  const details = theater?.details ?? {}
 
   const onSaved = () => queryClient.invalidateQueries({ queryKey: ["theater", theaterId] })
 
@@ -547,29 +587,70 @@ export default function TheaterSettings() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Theater Settings" />
+      {/* Header */}
+      <div className="space-y-4">
+        <PageHeader title="Theater Settings" />
 
-      <Tabs defaultValue="info" orientation="vertical" className="flex flex-col sm:flex-row gap-0">
-        <TabsList className="flex sm:flex-col h-auto w-full sm:w-44 shrink-0 bg-muted/50 border rounded-lg sm:rounded-r-none p-1 justify-start">
-          <TabsTrigger value="info"       className="w-full justify-start text-left data-[state=active]:shadow-sm">Info</TabsTrigger>
-          <TabsTrigger value="facilities" className="w-full justify-start text-left data-[state=active]:shadow-sm">Facilities</TabsTrigger>
-          <TabsTrigger value="images"     className="w-full justify-start text-left data-[state=active]:shadow-sm">Images</TabsTrigger>
-          <TabsTrigger value="tnc"        className="w-full justify-start text-left data-[state=active]:shadow-sm">T&amp;C</TabsTrigger>
-        </TabsList>
+        {/* Quick info chips */}
+        {theater && (
+          <div className="flex flex-wrap items-center gap-3">
+            <StatusBadge status={theater?.lifecycle?.status} />
+            {details.city && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground border rounded-lg px-3 py-1.5 bg-background shadow-sm">
+                <MapPin className="h-3.5 w-3.5 shrink-0" />
+                <span>{[details.city, details.state].filter(Boolean).join(", ")}</span>
+              </div>
+            )}
+            {details.phone && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground border rounded-lg px-3 py-1.5 bg-background shadow-sm">
+                <Phone className="h-3.5 w-3.5 shrink-0" />
+                <span>{details.phone}</span>
+              </div>
+            )}
+            {details.email && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground border rounded-lg px-3 py-1.5 bg-background shadow-sm">
+                <Mail className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate max-w-[180px]">{details.email}</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
-        <div className="flex-1 border rounded-lg sm:rounded-l-none sm:border-l-0 bg-background">
-          <TabsContent value="info" className="m-0 p-6">
+      {/* Tabs */}
+      <Tabs defaultValue="info" className="flex flex-col">
+        {/* Underline tab bar */}
+        <div className="border-b border-border overflow-x-auto">
+          <TabsList className="flex h-auto gap-0 rounded-none bg-transparent p-0">
+            {[
+              { value: "info",       label: "Info",        Icon: Settings2  },
+              { value: "facilities", label: "Facilities",  Icon: Star       },
+              { value: "images",     label: "Images",      Icon: ImageIcon  },
+              { value: "tnc",        label: "T&C",         Icon: FileText   },
+            ].map(({ value, label, Icon }) => (
+              <TabsTrigger
+                key={value}
+                value={value}
+                className="flex items-center gap-2 rounded-none border-b-2 border-transparent -mb-px bg-transparent px-5 pb-3 pt-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:border-nfdc-primary data-[state=active]:bg-transparent data-[state=active]:text-nfdc-primary data-[state=active]:shadow-none"
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                {label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+
+        <div className="mt-6">
+          <TabsContent value="info" className="mt-0">
             <InfoTab theater={theater} theaterId={theaterId} onSaved={onSaved} />
           </TabsContent>
-          <TabsContent value="facilities" className="m-0 p-6">
+          <TabsContent value="facilities" className="mt-0">
             <FacilitiesTab theater={theater} theaterId={theaterId} onSaved={onSaved} />
           </TabsContent>
-          <TabsContent value="images" className="m-0 p-6">
-            <h3 className="text-base font-semibold mb-4">Theater Images</h3>
+          <TabsContent value="images" className="mt-0">
             <ImagesTab theater={theater} theaterId={theaterId} onSaved={onSaved} />
           </TabsContent>
-          <TabsContent value="tnc" className="m-0 p-6">
-            <h3 className="text-base font-semibold mb-4">Terms &amp; Conditions</h3>
+          <TabsContent value="tnc" className="mt-0">
             <TnCTab theater={theater} theaterId={theaterId} onSaved={onSaved} />
           </TabsContent>
         </div>

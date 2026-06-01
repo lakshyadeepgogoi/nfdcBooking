@@ -91,7 +91,7 @@ export default function BookingDetail() {
   const [deadlineOpen,  setDeadlineOpen]  = useState(false)
   const [refundOpen,    setRefundOpen]    = useState(false)
 
-  const { data: raw, isLoading } = useQuery({
+  const { data: raw, isLoading, isFetching } = useQuery({
     queryKey: ["booking", bookingId],
     queryFn:  () => getBooking(bookingId).then(r => r.data.data),
     enabled:  !!bookingId,
@@ -119,7 +119,6 @@ export default function BookingDetail() {
       toast.success("Status updated")
       invalidate()
       queryClient.invalidateQueries({ queryKey: ["bookings"] })
-      setConfirmAction(null)
     },
     onError: (e) => toast.error(e?.response?.data?.message ?? "Something went wrong."),
   })
@@ -163,7 +162,7 @@ export default function BookingDetail() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Loading…" action={{ label: "Back", icon: ArrowLeft, onClick: () => navigate("/admin/bookings") }} />
+        <PageHeader title="Loading…" action={{ label: "Back", icon: ArrowLeft, onClick: () => navigate(-1) }} />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             <Skeleton className="h-64 w-full rounded-xl" />
@@ -185,7 +184,7 @@ export default function BookingDetail() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <PageHeader
           title={`Booking #${shortId ?? "—"}`}
-          action={{ label: "Back", icon: ArrowLeft, onClick: () => navigate("/admin/bookings") }}
+          action={{ label: "Back", icon: ArrowLeft, onClick: () => navigate(-1) }}
         />
         {booking && (
           <div className="flex items-center gap-2 shrink-0">
@@ -444,12 +443,18 @@ export default function BookingDetail() {
                   <>
                     <Button
                       className="w-full bg-green-600 hover:bg-green-700 text-white justify-start"
+                      disabled={statusMutation.isPending || isFetching}
                       onClick={() => setConfirmAction({ action: "accept", label: "Accept this booking and notify the customer?" })}
                     >
-                      <CheckCircle2 className="mr-2 h-4 w-4" /> Accept Booking
+                      {statusMutation.isPending
+                        ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        : <CheckCircle2 className="mr-2 h-4 w-4" />
+                      }
+                      Accept Booking
                     </Button>
                     <Button
                       className="w-full justify-start" variant="destructive"
+                      disabled={statusMutation.isPending || isFetching}
                       onClick={() => setConfirmAction({ action: "cancel", label: "Cancel this booking? This cannot be undone." })}
                     >
                       <XCircle className="mr-2 h-4 w-4" /> Cancel Booking
@@ -460,12 +465,18 @@ export default function BookingDetail() {
                   <>
                     <Button
                       className="w-full bg-nfdc-primary hover:bg-nfdc-primary/90 justify-start"
+                      disabled={statusMutation.isPending || isFetching}
                       onClick={() => setConfirmAction({ action: "complete", label: "Mark this booking as completed?" })}
                     >
-                      <CheckCircle2 className="mr-2 h-4 w-4" /> Mark Completed
+                      {statusMutation.isPending
+                        ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        : <CheckCircle2 className="mr-2 h-4 w-4" />
+                      }
+                      Mark Completed
                     </Button>
                     <Button
                       className="w-full justify-start" variant="destructive"
+                      disabled={statusMutation.isPending || isFetching}
                       onClick={() => setConfirmAction({ action: "cancel", label: "Cancel this booking? This cannot be undone." })}
                     >
                       <XCircle className="mr-2 h-4 w-4" /> Cancel Booking
@@ -573,10 +584,15 @@ export default function BookingDetail() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => statusMutation.mutate({
-                action: confirmAction.action,
-                ...(confirmAction.action === "cancel" ? { reason: "Admin cancelled", cancellationCategory: "admin_policy" } : {}),
-              })}
+              onClick={() => {
+                // Capture and clear immediately so a second click is impossible
+                const pending = confirmAction
+                setConfirmAction(null)
+                statusMutation.mutate({
+                  action: pending.action,
+                  ...(pending.action === "cancel" ? { reason: "Admin cancelled", cancellationCategory: "admin_policy" } : {}),
+                })
+              }}
               disabled={statusMutation.isPending}
             >
               {statusMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
