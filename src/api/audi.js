@@ -6,6 +6,9 @@ export const listAudis = (theaterId) =>
 export const getAudi = (id) =>
   api.get(`/audis/${id}`)
 
+export const getAdminAudi = (id) =>
+  api.get(`/admin/audis/${id}`)
+
 export const createAudi = (data) =>
   api.post("/admin/audis", data)
 

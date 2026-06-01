@@ -66,8 +66,8 @@ function DatePicker({ label, value, onChange }) {
           {value ? format(value, "dd MMM yyyy") : label}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0">
-        <Calendar mode="single" selected={value} onSelect={onChange} initialFocus />
+      <PopoverContent className="w-[300px] p-0">
+        <Calendar mode="single" selected={value} onSelect={onChange} className="w-full [--cell-size:2.25rem]" captionLayout="dropdown" fromYear={2020} toYear={2035} initialFocus />
       </PopoverContent>
     </Popover>
   )

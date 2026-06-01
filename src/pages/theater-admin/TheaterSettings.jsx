@@ -437,8 +437,8 @@ function TnCTab({ theater, theaterId, onSaved }) {
                 {effectiveFrom ? format(effectiveFrom, "dd MMM yyyy") : "Pick a date"}
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-0">
-              <Calendar mode="single" selected={effectiveFrom} onSelect={setEffectiveFrom} initialFocus />
+            <PopoverContent className="w-[300px] p-0">
+              <Calendar mode="single" selected={effectiveFrom} onSelect={setEffectiveFrom} className="w-full [--cell-size:2.25rem]" captionLayout="dropdown" fromYear={2020} toYear={2035} initialFocus />
             </PopoverContent>
           </Popover>
         </div>

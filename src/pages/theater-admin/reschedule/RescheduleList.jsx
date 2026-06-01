@@ -5,18 +5,18 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import {
   CheckCircle2, XCircle, CalendarClock, ArrowRight, Loader2,
-  User, Building2, Clock, Info,
+  Building2, Clock, Info, AlertCircle,
 } from "lucide-react"
 import { format } from "date-fns"
 import { toast } from "sonner"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog"
@@ -45,6 +45,11 @@ function fmtRange(s, e) {
   return `${s ?? "?"} – ${e ?? "?"}`
 }
 
+function getInitials(name) {
+  if (!name) return "?"
+  return name.split(" ").slice(0, 2).map(w => w[0] ?? "").join("").toUpperCase() || "?"
+}
+
 // ─── Schema ────────────────────────────────────────────────────────────────────
 
 const postponeSchema = z.object({
@@ -59,12 +64,22 @@ const postponeSchema = z.object({
 
 function ScheduleBlock({ label, date, startTime, endTime, highlight }) {
   return (
-    <div className="min-w-0">
-      <p className="text-xs text-muted-foreground mb-1">{label}</p>
+    <div className="min-w-0 space-y-0.5">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className={`text-sm font-semibold truncate ${highlight ? "text-nfdc-primary" : "text-foreground"}`}>
         {fmtDate(date)}
       </p>
-      <p className="text-xs text-muted-foreground">{fmtRange(startTime, endTime)}</p>
+      <p className="text-xs text-muted-foreground tabular-nums">{fmtRange(startTime, endTime)}</p>
+    </div>
+  )
+}
+
+// ─── Avatar ────────────────────────────────────────────────────────────────────
+
+function Avatar({ name, colorClass = "bg-nfdc-primary/10 text-nfdc-primary" }) {
+  return (
+    <div className={`h-9 w-9 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 ${colorClass}`}>
+      {getInitials(name)}
     </div>
   )
 }
@@ -74,47 +89,44 @@ function ScheduleBlock({ label, date, startTime, endTime, highlight }) {
 function RescheduleCard({ booking, onApprove, onReject }) {
   const proposed  = booking?.proposedChange
   const priceDiff = proposed?.priceDiff ?? 0
-  const user      = booking?.user
-  const audi      = booking?.audi
+  const bd        = booking?.bookingDetails ?? {}
+  const userName  = booking?.relationships?.userName ?? booking?.user?.name ?? booking?.user?.email
+  const audiName  = booking?.relationships?.audiName  ?? booking?.audi?.name
+  const note      = booking?.note ?? proposed?.note
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-2 flex-wrap">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
+    <Card className="border-l-4 border-l-orange-400 hover:shadow-md transition-shadow duration-200">
+      <CardContent className="p-5 space-y-4">
+
+        {/* Header — avatar + meta */}
+        <div className="flex items-start gap-3">
+          <Avatar name={userName} colorClass="bg-orange-100 text-orange-700" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold truncate">{userName ?? "—"}</p>
+                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                  <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
+                  <span className="text-xs text-muted-foreground truncate">{audiName ?? "—"}</span>
+                </div>
+              </div>
               <StatusBadge status={booking?.lifecycle?.status} />
-              {priceDiff > 0 && (
-                <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-xs font-medium">
-                  +{formatINR(priceDiff)} extra
-                </Badge>
-              )}
             </div>
-            <p className="font-mono text-xs text-muted-foreground">{booking?.bookingId}</p>
-          </div>
-          <div className="text-xs text-right space-y-1 shrink-0">
-            <div className="flex items-center gap-1.5 text-muted-foreground justify-end">
-              <User className="h-3 w-3" />
-              <span className="truncate max-w-[140px]">{user?.name ?? user?.email ?? "—"}</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-muted-foreground justify-end">
-              <Building2 className="h-3 w-3" />
-              <span className="truncate max-w-[140px]">{audi?.name ?? "—"}</span>
-            </div>
+            <p className="font-mono text-[11px] text-muted-foreground/70 mt-1">{booking?.bookingId}</p>
           </div>
         </div>
-      </CardHeader>
 
-      <CardContent className="pt-0 space-y-3">
         {/* Schedule comparison */}
-        <div className="rounded-lg border border-border bg-muted/30 p-3 grid grid-cols-[1fr_auto_1fr] gap-3 items-center">
+        <div className="rounded-lg border border-border bg-muted/30 p-3 grid grid-cols-[1fr_32px_1fr] gap-2 items-center">
           <ScheduleBlock
             label="Current"
-            date={booking?.date}
-            startTime={booking?.startTime}
-            endTime={booking?.endTime}
+            date={bd.date ?? booking?.date}
+            startTime={bd.startTime ?? booking?.startTime}
+            endTime={bd.endTime ?? booking?.endTime}
           />
-          <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+          <div className="flex items-center justify-center">
+            <ArrowRight className="h-4 w-4 text-muted-foreground" />
+          </div>
           <ScheduleBlock
             label="Proposed"
             date={proposed?.date}
@@ -126,38 +138,40 @@ function RescheduleCard({ booking, onApprove, onReject }) {
 
         {/* Price diff notice */}
         {priceDiff > 0 && (
-          <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-2.5 py-2 border border-amber-100">
+          <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2.5 border border-amber-200">
             <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-            Approval will prompt user to pay an additional {formatINR(priceDiff)}.
+            <span>Approval requires <strong>{formatINR(priceDiff)}</strong> additional payment from user.</span>
           </div>
         )}
 
-        {/* User's note */}
-        {(booking?.note || proposed?.note) && (
-          <p className="text-xs text-muted-foreground italic border-l-2 border-border pl-2.5">
-            &quot;{booking?.note ?? proposed?.note}&quot;
-          </p>
+        {/* User note */}
+        {note && (
+          <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/40 rounded-lg px-3 py-2 border border-border">
+            <span className="italic">&quot;{note}&quot;</span>
+          </div>
         )}
 
         <Separator />
 
-        <div className="flex items-center justify-end gap-2">
+        {/* Actions */}
+        <div className="flex gap-2">
           <Button
             variant="outline"
             size="sm"
-            className="text-destructive border-destructive/30 hover:bg-destructive/5 hover:text-destructive"
+            className="flex-1 text-destructive border-destructive/30 hover:bg-destructive/5 hover:text-destructive hover:border-destructive/50"
             onClick={() => onReject(booking)}
           >
             <XCircle className="mr-1.5 h-3.5 w-3.5" /> Reject
           </Button>
           <Button
             size="sm"
-            className="bg-nfdc-primary hover:bg-nfdc-primary/90"
+            className="flex-1 bg-nfdc-primary hover:bg-nfdc-primary/90"
             onClick={() => onApprove(booking)}
           >
             <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Approve
           </Button>
         </div>
+
       </CardContent>
     </Card>
   )
@@ -165,48 +179,83 @@ function RescheduleCard({ booking, onApprove, onReject }) {
 
 // ─── InProgressCard (admin-initiated or awaiting payment) ──────────────────────
 
-function InProgressCard({ booking }) {
-  const status   = booking?.lifecycle?.status
-  const proposed = booking?.proposedChange
-  const user     = booking?.user
-  const audi     = booking?.audi
+const IN_PROGRESS_CONFIG = {
+  postponed: {
+    border:    "border-l-indigo-400",
+    avatar:    "bg-indigo-100 text-indigo-700",
+    msgIcon:   Clock,
+    msgClass:  "bg-indigo-50 text-indigo-700 border-indigo-200",
+    msg:       "Waiting for user to accept or reject the proposed dates.",
+  },
+  preponed: {
+    border:    "border-l-indigo-400",
+    avatar:    "bg-indigo-100 text-indigo-700",
+    msgIcon:   Clock,
+    msgClass:  "bg-indigo-50 text-indigo-700 border-indigo-200",
+    msg:       "Waiting for user to accept or reject the proposed dates.",
+  },
+  awaiting_reschedule_payment: {
+    border:    "border-l-amber-400",
+    avatar:    "bg-amber-100 text-amber-700",
+    msgIcon:   AlertCircle,
+    msgClass:  "bg-amber-50 text-amber-700 border-amber-200",
+    msg:       null,
+  },
+}
 
-  const waitMsg = {
-    postponed:                   "Waiting for user to accept or reject the proposed dates.",
-    preponed:                    "Waiting for user to accept or reject the proposed dates.",
-    awaiting_reschedule_payment: `Waiting for user to pay ${formatINR(booking?.pricing?.rescheduleAmount ?? 0)} reschedule fee.`,
-  }[status] ?? "Pending action."
+function InProgressCard({ booking }) {
+  const status    = booking?.lifecycle?.status
+  const proposed  = booking?.proposedChange
+  const bd        = booking?.bookingDetails ?? {}
+  const userName  = booking?.relationships?.userName ?? booking?.user?.name ?? booking?.user?.email
+  const audiName  = booking?.relationships?.audiName  ?? booking?.audi?.name
+
+  const cfg = IN_PROGRESS_CONFIG[status] ?? {
+    border: "border-l-slate-300",
+    avatar: "bg-slate-100 text-slate-600",
+    msgIcon: Clock,
+    msgClass: "bg-muted text-muted-foreground border-border",
+    msg: "Pending action.",
+  }
+
+  const waitMsg = cfg.msg
+    ?? `Waiting for user to pay ${formatINR(booking?.pricing?.rescheduleAmount ?? 0)} reschedule fee.`
+
+  const MsgIcon = cfg.msgIcon
 
   return (
-    <Card className="opacity-90">
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-2 flex-wrap">
-          <div className="space-y-1">
-            <StatusBadge status={status} />
-            <p className="font-mono text-xs text-muted-foreground">{booking?.bookingId}</p>
-          </div>
-          <div className="text-xs text-right space-y-1 shrink-0">
-            <div className="flex items-center gap-1.5 text-muted-foreground justify-end">
-              <User className="h-3 w-3" />
-              <span className="truncate max-w-[140px]">{user?.name ?? user?.email ?? "—"}</span>
+    <Card className={`border-l-4 ${cfg.border} hover:shadow-md transition-shadow duration-200`}>
+      <CardContent className="p-5 space-y-4">
+
+        {/* Header */}
+        <div className="flex items-start gap-3">
+          <Avatar name={userName} colorClass={cfg.avatar} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold truncate">{userName ?? "—"}</p>
+                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                  <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
+                  <span className="text-xs text-muted-foreground truncate">{audiName ?? "—"}</span>
+                </div>
+              </div>
+              <StatusBadge status={status} />
             </div>
-            <div className="flex items-center gap-1.5 text-muted-foreground justify-end">
-              <Building2 className="h-3 w-3" />
-              <span className="truncate max-w-[140px]">{audi?.name ?? "—"}</span>
-            </div>
+            <p className="font-mono text-[11px] text-muted-foreground/70 mt-1">{booking?.bookingId}</p>
           </div>
         </div>
-      </CardHeader>
 
-      <CardContent className="pt-0 space-y-3">
-        <div className="rounded-lg border border-border bg-muted/30 p-3 grid grid-cols-[1fr_auto_1fr] gap-3 items-center">
+        {/* Schedule comparison */}
+        <div className="rounded-lg border border-border bg-muted/30 p-3 grid grid-cols-[1fr_32px_1fr] gap-2 items-center">
           <ScheduleBlock
             label="Original"
-            date={booking?.date}
-            startTime={booking?.startTime}
-            endTime={booking?.endTime}
+            date={bd.date ?? booking?.date}
+            startTime={bd.startTime ?? booking?.startTime}
+            endTime={bd.endTime ?? booking?.endTime}
           />
-          <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+          <div className="flex items-center justify-center">
+            <ArrowRight className="h-4 w-4 text-muted-foreground" />
+          </div>
           <ScheduleBlock
             label="Proposed"
             date={proposed?.date}
@@ -216,10 +265,32 @@ function InProgressCard({ booking }) {
           />
         </div>
 
-        <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-2.5 py-2 border border-amber-100">
-          <Clock className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          {waitMsg}
+        {/* Wait message */}
+        <div className={`flex items-start gap-2 text-xs rounded-lg px-3 py-2.5 border ${cfg.msgClass}`}>
+          <MsgIcon className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>{waitMsg}</span>
         </div>
+
+      </CardContent>
+    </Card>
+  )
+}
+
+// ─── Card skeleton ─────────────────────────────────────────────────────────────
+
+function CardSkeleton({ rows = 3 }) {
+  return (
+    <Card className="border-l-4 border-l-border">
+      <CardContent className="p-5 space-y-4">
+        <div className="flex items-start gap-3">
+          <Skeleton className="h-9 w-9 rounded-full shrink-0" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+        </div>
+        <Skeleton className="h-20 w-full rounded-lg" />
+        {rows > 2 && <Skeleton className="h-9 w-full rounded-md" />}
       </CardContent>
     </Card>
   )
@@ -369,8 +440,8 @@ function RejectDialog({ target, onClose }) {
 
 function PostponeDialog({ open, onOpenChange }) {
   const queryClient = useQueryClient()
-  const [rawId,   setRawId]   = useState("")
-  const [booking, setBooking] = useState(null)
+  const [rawId,    setRawId]    = useState("")
+  const [booking,  setBooking]  = useState(null)
   const [fetching, setFetching] = useState(false)
 
   const form = useForm({
@@ -392,7 +463,8 @@ function PostponeDialog({ open, onOpenChange }) {
     setBooking(null)
     try {
       const r = await getBooking(id)
-      setBooking(r.data.data ?? r.data)
+      const raw = r.data.data ?? r.data
+      setBooking(raw?.booking ?? raw)
       form.reset({ action: "postpone", date: undefined, startTime: "", endTime: "", note: "" })
     } catch {
       toast.error("Booking not found or access denied")
@@ -416,6 +488,9 @@ function PostponeDialog({ open, onOpenChange }) {
     },
     onError: (err) => toast.error(err?.response?.data?.message ?? "Something went wrong."),
   })
+
+  const bUserName = booking?.relationships?.userName ?? booking?.user?.name ?? booking?.user?.email
+  const bAudiName = booking?.relationships?.audiName ?? booking?.audi?.name
 
   return (
     <Dialog open={open} onOpenChange={o => { if (!o) handleClose() }}>
@@ -452,23 +527,25 @@ function PostponeDialog({ open, onOpenChange }) {
           {/* Booking summary */}
           {booking && (
             <>
-              <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-xs font-medium">{booking.bookingId}</span>
+                  <span className="font-mono text-xs font-medium text-muted-foreground">{booking.bookingId}</span>
                   <StatusBadge status={booking.lifecycle?.status} />
                 </div>
-                <div className="text-xs text-muted-foreground space-y-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <User className="h-3 w-3" />
-                    {booking.user?.name ?? booking.user?.email ?? "—"}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Building2 className="h-3 w-3" />
-                    {booking.audi?.name ?? "—"}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <CalendarClock className="h-3 w-3" />
-                    {fmtDate(booking.date)} · {fmtRange(booking.startTime, booking.endTime)}
+                <div className="flex items-center gap-3">
+                  <Avatar name={bUserName} colorClass="bg-nfdc-primary/10 text-nfdc-primary" />
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="text-sm font-medium truncate">{bUserName ?? "—"}</p>
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Building2 className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{bAudiName ?? "—"}</span>
+                      <span className="text-border">·</span>
+                      <CalendarClock className="h-3 w-3 shrink-0" />
+                      <span className="truncate tabular-nums">
+                        {fmtDate(booking.bookingDetails?.date ?? booking.date)}{" "}
+                        {fmtRange(booking.bookingDetails?.startTime ?? booking.startTime, booking.bookingDetails?.endTime ?? booking.endTime)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -477,25 +554,32 @@ function PostponeDialog({ open, onOpenChange }) {
 
               <Form {...form}>
                 <form id="postpone-form" onSubmit={form.handleSubmit(v => mutation.mutate(v))} className="space-y-4">
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <Label className="text-sm font-medium">Action</Label>
                     <RadioGroup
                       value={form.watch("action")}
                       onValueChange={v => form.setValue("action", v, { shouldValidate: true })}
-                      className="flex gap-5"
+                      className="grid grid-cols-2 gap-2"
                     >
-                      <div className="flex items-center gap-2">
-                        <RadioGroupItem value="postpone" id="r-postpone" />
-                        <Label htmlFor="r-postpone" className="font-normal text-sm cursor-pointer">
-                          Postpone (later date)
-                        </Label>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <RadioGroupItem value="prepone" id="r-prepone" />
-                        <Label htmlFor="r-prepone" className="font-normal text-sm cursor-pointer">
-                          Prepone (earlier date)
-                        </Label>
-                      </div>
+                      {[
+                        { value: "postpone", label: "Postpone", desc: "Later date" },
+                        { value: "prepone",  label: "Prepone",  desc: "Earlier date" },
+                      ].map(opt => (
+                        <label
+                          key={opt.value}
+                          className={`flex items-start gap-2.5 rounded-lg border p-3 cursor-pointer transition-colors ${
+                            form.watch("action") === opt.value
+                              ? "border-blue-600 bg-blue-50"
+                              : "border-border hover:bg-muted/40"
+                          }`}
+                        >
+                          <RadioGroupItem value={opt.value} id={`r-${opt.value}`} className="mt-0.5" />
+                          <div>
+                            <p className="text-sm font-medium leading-none">{opt.label}</p>
+                            <p className="text-xs text-muted-foreground mt-1">{opt.desc}</p>
+                          </div>
+                        </label>
+                      ))}
                     </RadioGroup>
                   </div>
 
@@ -538,6 +622,18 @@ function PostponeDialog({ open, onOpenChange }) {
   )
 }
 
+// ─── Stat chip ─────────────────────────────────────────────────────────────────
+
+function StatChip({ label, count, colorClass }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border bg-background px-4 py-2.5 shadow-sm">
+      <span className={`h-2 w-2 rounded-full shrink-0 ${colorClass}`} />
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="ml-auto text-sm font-semibold tabular-nums">{count}</span>
+    </div>
+  )
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function RescheduleList() {
@@ -570,11 +666,10 @@ export default function RescheduleList() {
   })
 
   const inProgressLoading = l1 || l2 || l3
-  const inProgressList    = [
-    ...parseList(postponedRaw),
-    ...parseList(preponedRaw),
-    ...parseList(awaitingRaw),
-  ]
+  const postponedList     = parseList(postponedRaw)
+  const preponedList      = parseList(preponedRaw)
+  const awaitingList      = parseList(awaitingRaw)
+  const inProgressList    = [...postponedList, ...preponedList, ...awaitingList]
 
   const pendingCount    = pendingList.length
   const inProgressCount = inProgressList.length
@@ -586,8 +681,16 @@ export default function RescheduleList() {
         action={{ label: "Propose New Dates", icon: CalendarClock, onClick: () => setPostponeOpen(true) }}
       />
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        {/* Tab bar — underline style matching the rest of the app */}
+      {/* Summary chips */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatChip label="Pending Review"     count={pendingCount}          colorClass="bg-orange-400" />
+        <StatChip label="Awaiting Response"  count={postponedList.length + preponedList.length} colorClass="bg-indigo-400" />
+        <StatChip label="Awaiting Payment"   count={awaitingList.length}   colorClass="bg-amber-400" />
+        <StatChip label="Total Active"       count={pendingCount + inProgressCount} colorClass="bg-nfdc-primary" />
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col">
+        {/* Tab bar */}
         <div className="border-b border-border overflow-x-auto">
           <TabsList className="flex h-auto gap-0 rounded-none bg-transparent p-0">
             {[
@@ -611,13 +714,12 @@ export default function RescheduleList() {
         </div>
 
         <div className="mt-6">
+
           {/* ── Pending Review ── */}
           <TabsContent value="pending" className="mt-0">
             {pendingLoading ? (
-              <div className="grid sm:grid-cols-2 gap-4">
-                {[1, 2].map(i => (
-                  <Card key={i}><CardContent className="h-52 animate-pulse bg-muted/30 pt-6" /></Card>
-                ))}
+              <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                {[1, 2, 3].map(i => <CardSkeleton key={i} rows={3} />)}
               </div>
             ) : pendingList.length === 0 ? (
               <EmptyState
@@ -626,7 +728,7 @@ export default function RescheduleList() {
                 message="All user reschedule requests have been reviewed."
               />
             ) : (
-              <div className="grid sm:grid-cols-2 gap-4">
+              <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
                 {pendingList.map(bk => (
                   <RescheduleCard
                     key={bk.bookingId ?? bk._id}
@@ -642,10 +744,8 @@ export default function RescheduleList() {
           {/* ── In Progress ── */}
           <TabsContent value="in-progress" className="mt-0">
             {inProgressLoading ? (
-              <div className="grid sm:grid-cols-2 gap-4">
-                {[1, 2].map(i => (
-                  <Card key={i}><CardContent className="h-40 animate-pulse bg-muted/30 pt-6" /></Card>
-                ))}
+              <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                {[1, 2, 3].map(i => <CardSkeleton key={i} rows={2} />)}
               </div>
             ) : inProgressList.length === 0 ? (
               <EmptyState
@@ -654,13 +754,14 @@ export default function RescheduleList() {
                 message="No bookings are currently awaiting user response or payment."
               />
             ) : (
-              <div className="grid sm:grid-cols-2 gap-4">
+              <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
                 {inProgressList.map(bk => (
                   <InProgressCard key={bk.bookingId ?? bk._id} booking={bk} />
                 ))}
               </div>
             )}
           </TabsContent>
+
         </div>
       </Tabs>
 

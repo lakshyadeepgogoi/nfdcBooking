@@ -10,7 +10,7 @@ import {
 } from "date-fns"
 import {
   ArrowLeft, Loader2, CheckCircle2, XCircle, Clock, Info,
-  ChevronLeft, ChevronRight, CalendarDays,
+  ChevronLeft, ChevronRight, CalendarDays, CreditCard, BadgePercent,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -619,6 +619,17 @@ function ServicesField({ control, audiId, bookingType }) {
   )
 }
 
+// ─── SectionHeader ────────────────────────────────────────────────────────────
+
+function SectionHeader({ label }) {
+  return (
+    <div className="flex items-center gap-3 pt-1">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground shrink-0">{label}</p>
+      <div className="flex-1 h-px bg-border" />
+    </div>
+  )
+}
+
 // ─── BookingForm ──────────────────────────────────────────────────────────────
 
 function BookingForm({ schema, onSubmit, isPending, audiList, submitLabel }) {
@@ -658,10 +669,12 @@ function BookingForm({ schema, onSubmit, isPending, audiList, submitLabel }) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
 
+        <SectionHeader label="Customer" />
         <UserIdField control={form.control} onVerifiedChange={setUserVerified} />
 
+        <SectionHeader label="Booking Details" />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FormSelect
             control={form.control}
@@ -678,7 +691,6 @@ function BookingForm({ schema, onSubmit, isPending, audiList, submitLabel }) {
           />
         </div>
 
-        {/* Availability calendar — also serves as the date picker */}
         <AvailabilityCalendar
           control={form.control}
           setValue={form.setValue}
@@ -693,12 +705,13 @@ function BookingForm({ schema, onSubmit, isPending, audiList, submitLabel }) {
           bookingType={bookingType}
         />
 
+        <SectionHeader label="Payment & Notes" />
         <FormTextarea control={form.control} name="notes" label="Notes (optional)" rows={2} />
 
         {schema === offlineSchema ? (
           <FormField control={form.control} name="paymentReference" render={({ field }) => (
             <FormItem>
-              <FormLabel>Payment Reference</FormLabel>
+              <FormLabel>Payment Reference <span className="text-destructive">*</span></FormLabel>
               <FormControl>
                 <Input placeholder="Cheque / DD number" {...field} />
               </FormControl>
@@ -715,20 +728,22 @@ function BookingForm({ schema, onSubmit, isPending, audiList, submitLabel }) {
           />
         )}
 
-        <Button
-          type="submit"
-          disabled={isPending || !userVerified}
-          className="w-full bg-nfdc-primary hover:bg-nfdc-primary/90"
-        >
-          {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {submitLabel}
-        </Button>
+        <div className="pt-2">
+          <Button
+            type="submit"
+            disabled={isPending || !userVerified}
+            className="w-full bg-nfdc-primary hover:bg-nfdc-primary/90 h-11 text-base"
+          >
+            {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {submitLabel}
+          </Button>
+          {!userVerified && (
+            <p className="text-xs text-center text-muted-foreground mt-2">
+              Verify a valid User ID above to enable booking creation
+            </p>
+          )}
+        </div>
 
-        {!userVerified && (
-          <p className="text-xs text-center text-muted-foreground -mt-1">
-            Verify a valid User ID above to enable booking creation
-          </p>
-        )}
       </form>
     </Form>
   )
@@ -795,45 +810,112 @@ export default function ManualBooking() {
   })
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6">
       <PageHeader
         title="Manual Booking"
         action={{ label: "Back", icon: ArrowLeft, onClick: () => navigate("/admin/bookings") }}
       />
 
-      <Tabs defaultValue="offline">
-        <TabsList>
-          <TabsTrigger value="offline">Offline Payment</TabsTrigger>
-          <TabsTrigger value="waived">Waived</TabsTrigger>
-        </TabsList>
+      <Tabs defaultValue="offline" className="flex flex-col">
+        {/* Underline tab bar */}
+        <div className="border-b border-border overflow-x-auto">
+          <TabsList className="flex h-auto gap-0 rounded-none bg-transparent p-0">
+            {[
+              { value: "offline", label: "Offline Payment", icon: CreditCard },
+              { value: "waived",  label: "Fee Waived",      icon: BadgePercent },
+            ].map(({ value, label, icon: Icon }) => (
+              <TabsTrigger
+                key={value}
+                value={value}
+                className="flex items-center gap-2 rounded-none border-b-2 border-transparent -mb-px bg-transparent px-5 pb-3 pt-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:border-nfdc-primary data-[state=active]:bg-transparent data-[state=active]:text-nfdc-primary data-[state=active]:shadow-none"
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
-        <TabsContent value="offline" className="mt-4">
-          <Card>
-            <CardContent className="pt-6">
-              <BookingForm
-                schema={offlineSchema}
-                onSubmit={(v) => offlineMutation.mutate(v)}
-                isPending={offlineMutation.isPending}
-                audiList={audiList}
-                submitLabel="Create Booking (Offline)"
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
+        <div className="mt-6">
+          <TabsContent value="offline" className="mt-0">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Form */}
+              <div className="lg:col-span-2">
+                <Card>
+                  <CardContent className="pt-6">
+                    <BookingForm
+                      schema={offlineSchema}
+                      onSubmit={(v) => offlineMutation.mutate(v)}
+                      isPending={offlineMutation.isPending}
+                      audiList={audiList}
+                      submitLabel="Create Booking (Offline)"
+                    />
+                  </CardContent>
+                </Card>
+              </div>
+              {/* Info panel */}
+              <div className="space-y-4">
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-blue-800">
+                    <CreditCard className="h-4 w-4 shrink-0" />
+                    <p className="text-sm font-semibold">Offline Payment</p>
+                  </div>
+                  <p className="text-xs text-blue-700 leading-relaxed">
+                    Use this when the customer has already paid via cheque, demand draft, or cash. Provide the payment reference number for audit records.
+                  </p>
+                </div>
+                <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">How it works</p>
+                  <ul className="text-xs text-muted-foreground space-y-1.5">
+                    <li className="flex items-start gap-2"><span className="text-nfdc-primary font-bold mt-0.5">1.</span> Verify the customer's User ID</li>
+                    <li className="flex items-start gap-2"><span className="text-nfdc-primary font-bold mt-0.5">2.</span> Select audi, date &amp; time</li>
+                    <li className="flex items-start gap-2"><span className="text-nfdc-primary font-bold mt-0.5">3.</span> Add services if needed</li>
+                    <li className="flex items-start gap-2"><span className="text-nfdc-primary font-bold mt-0.5">4.</span> Enter payment reference &amp; submit</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
 
-        <TabsContent value="waived" className="mt-4">
-          <Card>
-            <CardContent className="pt-6">
-              <BookingForm
-                schema={waivedSchema}
-                onSubmit={(v) => waivedMutation.mutate(v)}
-                isPending={waivedMutation.isPending}
-                audiList={audiList}
-                submitLabel="Create Booking (Waived)"
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
+          <TabsContent value="waived" className="mt-0">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Form */}
+              <div className="lg:col-span-2">
+                <Card>
+                  <CardContent className="pt-6">
+                    <BookingForm
+                      schema={waivedSchema}
+                      onSubmit={(v) => waivedMutation.mutate(v)}
+                      isPending={waivedMutation.isPending}
+                      audiList={audiList}
+                      submitLabel="Create Booking (Waived)"
+                    />
+                  </CardContent>
+                </Card>
+              </div>
+              {/* Info panel */}
+              <div className="space-y-4">
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-amber-800">
+                    <BadgePercent className="h-4 w-4 shrink-0" />
+                    <p className="text-sm font-semibold">Fee Waived</p>
+                  </div>
+                  <p className="text-xs text-amber-700 leading-relaxed">
+                    Use this when the booking fee is being waived — no payment is collected. A detailed written reason is required for audit and compliance purposes.
+                  </p>
+                </div>
+                <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Requirements</p>
+                  <ul className="text-xs text-muted-foreground space-y-1.5">
+                    <li className="flex items-start gap-2"><span className="text-amber-600 font-bold mt-0.5">•</span> Waiver reason must be at least 10 characters</li>
+                    <li className="flex items-start gap-2"><span className="text-amber-600 font-bold mt-0.5">•</span> Must include justification for audit trail</li>
+                    <li className="flex items-start gap-2"><span className="text-amber-600 font-bold mt-0.5">•</span> Booking will be created in waived status</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+        </div>
       </Tabs>
     </div>
   )

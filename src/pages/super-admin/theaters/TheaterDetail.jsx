@@ -494,11 +494,12 @@ function TnCTab({ theater, theaterId, onSaved }) {
                 {effectiveFrom ? format(effectiveFrom, "dd MMM yyyy") : "Pick a date"}
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-0">
+            <PopoverContent className="w-[300px] p-0">
               <Calendar
                 mode="single"
                 selected={effectiveFrom}
                 onSelect={setEffectiveFrom}
+                className="w-full [--cell-size:2.25rem]"
                 captionLayout="dropdown"
                 fromYear={2020}
                 toYear={2035}
@@ -809,11 +810,12 @@ export default function TheaterDetail() {
                 {audiDate ? format(audiDate, "dd MMM yyyy") : "Select date"}
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="end">
+            <PopoverContent className="w-[300px] p-0" align="end">
               <Calendar
                 mode="single"
                 selected={audiDate}
                 onSelect={d => d && setAudiDate(d)}
+                className="w-full [--cell-size:2.25rem]"
                 captionLayout="dropdown"
                 fromYear={2020}
                 toYear={2035}

@@ -5,9 +5,9 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import {
-  ArrowLeft, Copy, Loader2, User, Building2, Clapperboard,
-  CalendarDays, Clock, Tag, CreditCard, FileCheck, History,
-  CheckCircle2, XCircle, AlertCircle, Timer,
+  ArrowLeft, Copy, Loader2, Clapperboard,
+  CalendarDays, Clock, CreditCard, FileCheck, History,
+  CheckCircle2, XCircle, AlertCircle, Timer, MapPin, Banknote,
 } from "lucide-react"
 import RoleGuard from "@/components/common/RoleGuard"
 import { PERMISSIONS } from "@/auth/permissions"
@@ -48,47 +48,42 @@ function duration(start, end) {
   return m ? `${h}h ${m}m` : `${h}h`
 }
 
-function InfoItem({ icon: Icon, label, value }) {
-  return (
-    <div className="flex items-start gap-3">
-      <div className="mt-0.5 h-8 w-8 rounded-md bg-muted flex items-center justify-center shrink-0">
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </div>
-      <div className="min-w-0">
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-sm font-medium truncate">{value ?? "—"}</p>
-      </div>
-    </div>
-  )
+function getInitials(name) {
+  if (!name) return "?"
+  return name.split(" ").slice(0, 2).map(w => w[0] ?? "").join("").toUpperCase() || "?"
 }
 
-function AmountRow({ label, value, bold, muted }) {
+function AmountRow({ label, value, bold, muted, positive }) {
   return (
-    <div className={`flex justify-between items-center py-1.5 ${bold ? "font-semibold" : ""} ${muted ? "text-muted-foreground text-xs" : "text-sm"}`}>
+    <div className={`flex justify-between items-center py-1.5 ${bold ? "font-semibold" : ""} ${muted ? "text-muted-foreground text-xs" : "text-sm"} ${positive ? "text-green-600" : ""}`}>
       <span>{label}</span>
-      <span>{value}</span>
+      <span className="tabular-nums">{value}</span>
     </div>
   )
 }
 
-function StatusDot({ status }) {
-  const colors = {
-    confirmed: "bg-green-500", accepted: "bg-green-500",
-    pending: "bg-yellow-500",
-    cancelled: "bg-red-500", rejected: "bg-red-500",
-    postponed: "bg-orange-400", preponed: "bg-blue-400",
-    completed: "bg-purple-500",
-    paid: "bg-green-500",
-  }
-  return <span className={`inline-block h-2 w-2 rounded-full shrink-0 mt-1.5 ${colors[status] ?? "bg-muted-foreground"}`} />
+function MetaChip({ label, value }) {
+  return (
+    <span className="text-xs text-muted-foreground">
+      {label}: <span className="font-medium text-foreground">{value}</span>
+    </span>
+  )
+}
+
+const STATUS_DOT_COLORS = {
+  confirmed: "bg-green-500", accepted: "bg-green-500",
+  pending:   "bg-yellow-500",
+  cancelled: "bg-red-500", rejected: "bg-red-500",
+  postponed: "bg-orange-400", preponed: "bg-blue-400",
+  completed: "bg-purple-500", paid: "bg-green-500",
 }
 
 // ─── main component ────────────────────────────────────────────────────────────
 
 export default function BookingDetail() {
   const { bookingId } = useParams()
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
+  const navigate      = useNavigate()
+  const queryClient   = useQueryClient()
 
   const [confirmAction, setConfirmAction] = useState(null)
   const [docsAction,    setDocsAction]    = useState(null)
@@ -98,8 +93,8 @@ export default function BookingDetail() {
 
   const { data: raw, isLoading } = useQuery({
     queryKey: ["booking", bookingId],
-    queryFn: () => getBooking(bookingId).then(r => r.data.data),
-    enabled: !!bookingId,
+    queryFn:  () => getBooking(bookingId).then(r => r.data.data),
+    enabled:  !!bookingId,
   })
 
   const booking   = raw?.booking ?? raw
@@ -109,11 +104,12 @@ export default function BookingDetail() {
   const bd        = booking?.bookingDetails ?? {}
   const pricing   = booking?.pricing ?? {}
   const rel       = booking?.relationships ?? {}
+  const dur       = duration(bd.startTime, bd.endTime)
+  const shortId   = id ? String(id).slice(-8).toUpperCase() : null
 
   useEffect(() => {
-    const shortId = id ? String(id).slice(-8) : null
     document.title = shortId ? `NFDC Admin — Booking #${shortId}` : "NFDC Admin — Booking"
-  }, [id])
+  }, [shortId])
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["booking", bookingId] })
 
@@ -164,25 +160,40 @@ export default function BookingDetail() {
     onError: (e) => toast.error(e?.response?.data?.message ?? "Something went wrong."),
   })
 
-  const dur = duration(bd.startTime, bd.endTime)
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Loading…" action={{ label: "Back", icon: ArrowLeft, onClick: () => navigate("/admin/bookings") }} />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            <Skeleton className="h-64 w-full rounded-xl" />
+            <Skeleton className="h-48 w-full rounded-xl" />
+          </div>
+          <div className="space-y-4">
+            <Skeleton className="h-40 w-full rounded-xl" />
+            <Skeleton className="h-32 w-full rounded-xl" />
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
+
       {/* ── Header ─────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex-1 min-w-0">
-          <PageHeader
-            title={isLoading ? "Loading…" : `Booking #${String(id ?? "").slice(-8).toUpperCase()}`}
-            action={{ label: "Back", icon: ArrowLeft, onClick: () => navigate("/admin/bookings") }}
-          />
-          {!isLoading && id && (
-            <p className="text-xs text-muted-foreground font-mono mt-0.5 ml-px">{id}</p>
-          )}
-        </div>
-        {!isLoading && booking && (
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <PageHeader
+          title={`Booking #${shortId ?? "—"}`}
+          action={{ label: "Back", icon: ArrowLeft, onClick: () => navigate("/admin/bookings") }}
+        />
+        {booking && (
           <div className="flex items-center gap-2 shrink-0">
             <StatusBadge status={status} />
-            <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(id); toast.success("ID copied") }}>
+            <Button
+              variant="outline" size="sm"
+              onClick={() => { navigator.clipboard.writeText(id); toast.success("ID copied") }}
+            >
               <Copy className="mr-1.5 h-3.5 w-3.5" /> Copy ID
             </Button>
           </div>
@@ -192,117 +203,109 @@ export default function BookingDetail() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* ── Left column ──────────────────────────────────────────── */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-5">
 
-          {/* Booking Info */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Booking Details</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? <Skeleton className="h-36 w-full" /> : (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <InfoItem icon={User}        label="Customer"    value={rel.userName} />
-                    <InfoItem icon={Building2}   label="Theater"     value={rel.theaterName} />
-                    <InfoItem icon={Clapperboard} label="Audi"       value={rel.audiName} />
-                  </div>
-                  <Separator />
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    <InfoItem icon={CalendarDays} label="Date"
-                      value={formatDate(bd.date)} />
-                    <InfoItem icon={Clock} label="Time"
-                      value={bd.startTime && bd.endTime ? `${bd.startTime} – ${bd.endTime}` : null} />
-                    {dur && (
-                      <InfoItem icon={Timer} label="Duration" value={dur} />
-                    )}
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5 h-8 w-8 rounded-md bg-muted flex items-center justify-center shrink-0">
-                        <Tag className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Booking Type</p>
-                        <Badge variant="outline" className="mt-0.5 capitalize text-xs">
-                          {bd.bookingType ?? "—"}
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-3 text-xs text-muted-foreground pt-1">
-                    <span>Placed by: <span className="font-medium text-foreground capitalize">{bd.placedBy ?? "—"}</span></span>
-                    <span>·</span>
-                    <span>Created: <span className="font-medium text-foreground">{formatDateTime(booking?.createdAt)}</span></span>
-                    {booking?.updatedAt && booking.updatedAt !== booking.createdAt && (
-                      <>
-                        <span>·</span>
-                        <span>Updated: <span className="font-medium text-foreground">{formatDateTime(booking.updatedAt)}</span></span>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Cancellation info — only when cancelled */}
-                  {status === "cancelled" && (bd.cancellationReason || bd.cancellationCategory) && (
-                    <>
-                      <Separator />
-                      <div className="rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 p-3 space-y-1">
-                        <p className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase tracking-wide">Cancellation</p>
-                        {bd.cancellationCategory && (
-                          <p className="text-sm">
-                            <span className="text-muted-foreground">Category: </span>
-                            <span className="font-medium capitalize">{bd.cancellationCategory.replace(/_/g, " ")}</span>
-                          </p>
-                        )}
-                        {bd.cancellationReason && (
-                          <p className="text-sm">
-                            <span className="text-muted-foreground">Reason: </span>
-                            <span className="font-medium">{bd.cancellationReason}</span>
-                          </p>
-                        )}
-                      </div>
-                    </>
+          {/* Booking Info ─────────────────────────────────────────── */}
+          <Card className="overflow-hidden">
+            {/* Hero header */}
+            <div className="bg-muted/40 border-b px-6 py-4">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="space-y-1 min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Booking Reference</p>
+                  <p className="text-2xl font-bold font-mono tracking-tight">#{shortId}</p>
+                  <p className="text-xs text-muted-foreground font-mono truncate max-w-[260px]">{id}</p>
+                </div>
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  <StatusBadge status={status} />
+                  {bd.bookingType && (
+                    <Badge variant="outline" className="capitalize text-xs">{bd.bookingType}</Badge>
                   )}
                 </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Payment */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Payment</CardTitle>
-                {!isLoading && <StatusBadge status={booking?.paymentStage?.status ?? "pending"} />}
               </div>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? <Skeleton className="h-28 w-full" /> : (
-                <div className="space-y-1">
-                  <AmountRow label="Base (Audi)"      value={formatINR(pricing.baseAmount ?? 0)} />
-                  {(pricing.serviceAmount ?? 0) > 0 && (
-                    <AmountRow label="Services"        value={formatINR(pricing.serviceAmount)} />
+            </div>
+
+            <CardContent className="p-6 space-y-5">
+
+              {/* Customer & Venue ── */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {/* Customer with avatar */}
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-nfdc-primary/10 text-nfdc-primary flex items-center justify-center text-sm font-semibold shrink-0">
+                    {getInitials(rel.userName)}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-0.5">Customer</p>
+                    <p className="text-sm font-semibold truncate">{rel.userName ?? "—"}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-md bg-muted flex items-center justify-center shrink-0">
+                    <MapPin className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-0.5">Theater</p>
+                    <p className="text-sm font-semibold truncate">{rel.theaterName ?? "—"}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-md bg-muted flex items-center justify-center shrink-0">
+                    <Clapperboard className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-0.5">Audi</p>
+                    <p className="text-sm font-semibold truncate">{rel.audiName ?? "—"}</p>
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Date & Time block ── */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 rounded-lg border overflow-hidden">
+                {[
+                  { label: "Date",       value: formatDate(bd.date) ?? "—",                       icon: CalendarDays },
+                  { label: "Start",      value: bd.startTime ?? "—",                              icon: Clock        },
+                  { label: "End",        value: bd.endTime   ?? "—",                              icon: Clock        },
+                  { label: "Duration",   value: dur ?? "—",                                       icon: Timer        },
+                ].map(({ label, value, icon: Icon }, i) => (
+                  <div key={label} className={`p-4 space-y-1 ${i < 3 ? "border-r last:border-r-0" : ""} border-b sm:border-b-0`}>
+                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground uppercase tracking-wide">
+                      <Icon className="h-3 w-3" />
+                      {label}
+                    </div>
+                    <p className="text-sm font-semibold tabular-nums">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Meta footer ── */}
+              <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1">
+                <MetaChip label="Placed by" value={<span className="capitalize">{bd.placedBy ?? "—"}</span>} />
+                <MetaChip label="Created"   value={formatDateTime(booking?.createdAt)} />
+                {booking?.updatedAt && booking.updatedAt !== booking.createdAt && (
+                  <MetaChip label="Updated" value={formatDateTime(booking.updatedAt)} />
+                )}
+              </div>
+
+              {/* Cancellation ── */}
+              {status === "cancelled" && (bd.cancellationReason || bd.cancellationCategory) && (
+                <div className="rounded-lg bg-red-50 border border-red-200 p-4 space-y-1.5">
+                  <div className="flex items-center gap-2 text-red-700">
+                    <XCircle className="h-4 w-4 shrink-0" />
+                    <p className="text-sm font-semibold">Cancellation Details</p>
+                  </div>
+                  {bd.cancellationCategory && (
+                    <p className="text-sm text-red-700">
+                      <span className="text-red-600/70">Category: </span>
+                      <span className="font-medium capitalize">{bd.cancellationCategory.replace(/_/g, " ")}</span>
+                    </p>
                   )}
-                  <AmountRow
-                    label={`Tax (${pricing.breakdown?.tax?.rate != null ? `${(pricing.breakdown.tax.rate * 100).toFixed(0)}%` : "GST"})`}
-                    value={formatINR(pricing.taxAmount ?? 0)}
-                    muted
-                  />
-                  <Separator className="my-2" />
-                  <AmountRow label="Total Amount"     value={formatINR(pricing.totalAmount ?? 0)} bold />
-                  {(pricing.depositAmount ?? 0) > 0 && (
-                    <AmountRow label="Security Deposit" value={formatINR(pricing.depositAmount)} />
-                  )}
-                  {(pricing.overtimeCharge ?? 0) > 0 && (
-                    <AmountRow
-                      label={`Overtime (${pricing.overtimeHours}h)`}
-                      value={formatINR(pricing.overtimeCharge)}
-                    />
-                  )}
-                  {pricing.depositRefunded && (
-                    <p className="text-xs text-green-600 font-medium pt-1">Deposit refunded</p>
-                  )}
-                  {booking?.paymentDeadline && booking?.paymentStage?.status !== "paid" && (
-                    <p className="text-xs text-muted-foreground pt-1">
-                      Payment deadline: <span className="font-medium text-foreground">{formatDateTime(booking.paymentDeadline)}</span>
+                  {bd.cancellationReason && (
+                    <p className="text-sm text-red-700">
+                      <span className="text-red-600/70">Reason: </span>
+                      <span className="font-medium">{bd.cancellationReason}</span>
                     </p>
                   )}
                 </div>
@@ -310,25 +313,111 @@ export default function BookingDetail() {
             </CardContent>
           </Card>
 
-          {/* Status History */}
-          {!isLoading && booking?.lifecycle?.statusHistory?.length > 0 && (
+          {/* Payment ───────────────────────────────────────────────── */}
+          <Card>
+            <CardHeader className="pb-3 border-b">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Banknote className="h-4 w-4 text-muted-foreground" />
+                  Payment Summary
+                </CardTitle>
+                <StatusBadge status={booking?.paymentStage?.status ?? "pending"} />
+              </div>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <div className="space-y-0.5">
+                <AmountRow label="Audi (Base)"  value={formatINR(pricing.baseAmount ?? 0)} />
+                {(pricing.serviceAmount ?? 0) > 0 && (
+                  <AmountRow label="Services"   value={formatINR(pricing.serviceAmount)} />
+                )}
+                <AmountRow
+                  label={`GST (${pricing.breakdown?.tax?.rate != null ? `${(pricing.breakdown.tax.rate * 100).toFixed(0)}%` : "—"})`}
+                  value={formatINR(pricing.taxAmount ?? 0)}
+                  muted
+                />
+                {(pricing.overtimeCharge ?? 0) > 0 && (
+                  <AmountRow
+                    label={`Overtime (${pricing.overtimeHours}h)`}
+                    value={formatINR(pricing.overtimeCharge)}
+                  />
+                )}
+                <Separator className="my-2" />
+                <AmountRow label="Booking Cost" value={formatINR(pricing.totalAmount ?? 0)} bold />
+
+                {(pricing.depositAmount ?? 0) > 0 && (
+                  <>
+                    <AmountRow
+                      label={`Security Deposit${pricing.depositType === "percentage"
+                        ? ` (${pricing.breakdown?.deposit?.percentage ?? ""}%)`
+                        : pricing.depositType === "fixed" ? " (Fixed)" : ""
+                      }`}
+                      value={`+ ${formatINR(pricing.depositAmount)}`}
+                    />
+                    <Separator className="my-2" />
+                    <AmountRow
+                      label="Amount Charged"
+                      value={formatINR(pricing.amountCharged ?? ((pricing.totalAmount ?? 0) + (pricing.depositAmount ?? 0)))}
+                      bold
+                    />
+                  </>
+                )}
+              </div>
+
+              {/* Deposit status banner */}
+              {(pricing.depositAmount ?? 0) > 0 && (
+                <div className="mt-3">
+                  {pricing.depositRefunded ? (
+                    <div className="flex items-start gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-medium">Deposit refunded</span>
+                        {pricing.depositRefundedAt && (
+                          <span className="text-green-600/70 ml-1">· {formatDateTime(pricing.depositRefundedAt)}</span>
+                        )}
+                        {pricing.depositRefundNote && (
+                          <p className="text-green-600/70 mt-0.5 italic">"{pricing.depositRefundNote}"</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      <Banknote className="h-3.5 w-3.5 shrink-0" />
+                      <span>Security deposit held · refundable after event</span>
+                    </div>
+                  )}
+                </div>
+              )}
+              {booking?.paymentDeadline && booking?.paymentStage?.status !== "paid" && (
+                <p className="text-xs text-muted-foreground mt-3 pt-3 border-t">
+                  Payment deadline:{" "}
+                  <span className="font-medium text-foreground">{formatDateTime(booking.paymentDeadline)}</span>
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Status History ────────────────────────────────────────── */}
+          {booking?.lifecycle?.statusHistory?.length > 0 && (
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
-                  <History className="h-4 w-4" /> Status History
+              <CardHeader className="pb-3 border-b">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <History className="h-4 w-4 text-muted-foreground" />
+                  Status History
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
+              <CardContent className="pt-4">
+                <div className="relative pl-4 space-y-4">
+                  {/* vertical line */}
+                  <div className="absolute left-[7px] top-2 bottom-2 w-px bg-border" />
                   {[...booking.lifecycle.statusHistory].reverse().map((h, i) => (
-                    <div key={i} className="flex items-start gap-3 text-sm">
-                      <StatusDot status={h.status} />
-                      <div className="flex-1 min-w-0">
+                    <div key={i} className="relative flex items-start gap-3">
+                      <span className={`relative z-10 mt-1 h-3 w-3 rounded-full border-2 border-background shrink-0 ${STATUS_DOT_COLORS[h.status] ?? "bg-muted-foreground"}`} />
+                      <div className="flex-1 min-w-0 -mt-0.5">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-medium capitalize">{h.status}</span>
-                          {h.note && <span className="text-muted-foreground text-xs">— {h.note}</span>}
+                          <span className="text-sm font-semibold capitalize">{h.status?.replace(/_/g, " ")}</span>
+                          {h.note && <span className="text-xs text-muted-foreground italic">"{h.note}"</span>}
                         </div>
-                        <p className="text-xs text-muted-foreground">{formatDateTime(h.timestamp)}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{formatDateTime(h.timestamp)}</p>
                       </div>
                     </div>
                   ))}
@@ -341,116 +430,135 @@ export default function BookingDetail() {
         {/* ── Right column ─────────────────────────────────────────── */}
         <div className="space-y-4">
 
-          {/* Actions */}
+          {/* Actions ── */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Actions</CardTitle>
+            <CardHeader className="pb-3 border-b">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                Actions
+              </CardTitle>
             </CardHeader>
-            <CardContent>
-              {isLoading ? <Skeleton className="h-20 w-full" /> : (
-                <div className="space-y-2">
-                  {status === "pending" && (
-                    <>
-                      <Button className="w-full bg-green-600 hover:bg-green-700 text-white"
-                        onClick={() => setConfirmAction({ action: "accept", label: "Accept this booking and notify the customer?" })}>
-                        <CheckCircle2 className="mr-2 h-4 w-4" /> Accept Booking
-                      </Button>
-                      <Button className="w-full" variant="destructive"
-                        onClick={() => setConfirmAction({ action: "cancel", label: "Cancel this booking? This cannot be undone." })}>
-                        <XCircle className="mr-2 h-4 w-4" /> Cancel
-                      </Button>
-                    </>
-                  )}
-                  {status === "accepted" && (
-                    <>
-                      <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                        onClick={() => setConfirmAction({ action: "complete", label: "Mark this booking as completed?" })}>
-                        <CheckCircle2 className="mr-2 h-4 w-4" /> Mark Completed
-                      </Button>
-                      <Button className="w-full" variant="destructive"
-                        onClick={() => setConfirmAction({ action: "cancel", label: "Cancel this booking? This cannot be undone." })}>
-                        <XCircle className="mr-2 h-4 w-4" /> Cancel
-                      </Button>
-                    </>
-                  )}
-                  {status === "confirmed" && (
-                    <>
-                      <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                        onClick={() => setConfirmAction({ action: "complete", label: "Mark this booking as completed?" })}>
-                        <CheckCircle2 className="mr-2 h-4 w-4" /> Mark Completed
-                      </Button>
-                      <Button className="w-full" variant="destructive"
-                        onClick={() => setConfirmAction({ action: "cancel", label: "Cancel this booking? This cannot be undone." })}>
-                        <XCircle className="mr-2 h-4 w-4" /> Cancel
-                      </Button>
-                    </>
-                  )}
-                  {["cancelled", "completed", "superseded"].includes(status) && (
-                    <p className="text-sm text-muted-foreground text-center py-2">No actions available</p>
-                  )}
-                  {!status && <p className="text-sm text-muted-foreground text-center py-2">—</p>}
-                </div>
-              )}
+            <CardContent className="pt-4">
+              <div className="space-y-2">
+                {status === "pending" && (
+                  <>
+                    <Button
+                      className="w-full bg-green-600 hover:bg-green-700 text-white justify-start"
+                      onClick={() => setConfirmAction({ action: "accept", label: "Accept this booking and notify the customer?" })}
+                    >
+                      <CheckCircle2 className="mr-2 h-4 w-4" /> Accept Booking
+                    </Button>
+                    <Button
+                      className="w-full justify-start" variant="destructive"
+                      onClick={() => setConfirmAction({ action: "cancel", label: "Cancel this booking? This cannot be undone." })}
+                    >
+                      <XCircle className="mr-2 h-4 w-4" /> Cancel Booking
+                    </Button>
+                  </>
+                )}
+                {(status === "accepted" || status === "confirmed") && (
+                  <>
+                    <Button
+                      className="w-full bg-nfdc-primary hover:bg-nfdc-primary/90 justify-start"
+                      onClick={() => setConfirmAction({ action: "complete", label: "Mark this booking as completed?" })}
+                    >
+                      <CheckCircle2 className="mr-2 h-4 w-4" /> Mark Completed
+                    </Button>
+                    <Button
+                      className="w-full justify-start" variant="destructive"
+                      onClick={() => setConfirmAction({ action: "cancel", label: "Cancel this booking? This cannot be undone." })}
+                    >
+                      <XCircle className="mr-2 h-4 w-4" /> Cancel Booking
+                    </Button>
+                  </>
+                )}
+                {["cancelled", "completed", "superseded"].includes(status) && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-3 justify-center">
+                    <CheckCircle2 className="h-4 w-4" />
+                    No further actions available
+                  </div>
+                )}
+                {!status && <p className="text-sm text-muted-foreground text-center py-3">—</p>}
+              </div>
             </CardContent>
           </Card>
 
-          {/* Document Verification */}
+          {/* Documents ── */}
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-3 border-b">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
-                  <FileCheck className="h-4 w-4" /> Documents
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <FileCheck className="h-4 w-4 text-muted-foreground" />
+                  Documents
                 </CardTitle>
-                {!isLoading && <StatusBadge status={docStatus} />}
+                <StatusBadge status={docStatus} />
               </div>
             </CardHeader>
-            <CardContent className="space-y-2">
-              {isLoading ? <Skeleton className="h-16 w-full" /> : (
-                <>
-                  {bd.documentSubmittedAt && (
-                    <p className="text-xs text-muted-foreground pb-1">
-                      Submitted: <span className="font-medium text-foreground">{formatDateTime(bd.documentSubmittedAt)}</span>
-                    </p>
-                  )}
-                  <Button variant="outline" className="w-full"
-                    disabled={["submitted", "verified"].includes(docStatus)}
-                    onClick={() => setDocsAction("submitted")}>
-                    Mark Submitted
-                  </Button>
-                  <Button variant="outline" className="w-full border-green-400 text-green-700 hover:bg-green-50 dark:hover:bg-green-950"
-                    disabled={docStatus !== "submitted"}
-                    onClick={() => setDocsAction("verified")}>
-                    Mark Verified
-                  </Button>
-                </>
+            <CardContent className="pt-4 space-y-2">
+              {bd.documentSubmittedAt && (
+                <p className="text-xs text-muted-foreground pb-1">
+                  Submitted: <span className="font-medium text-foreground">{formatDateTime(bd.documentSubmittedAt)}</span>
+                </p>
               )}
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                disabled={["submitted", "verified"].includes(docStatus)}
+                onClick={() => setDocsAction("submitted")}
+              >
+                <FileCheck className="mr-2 h-4 w-4" /> Mark Submitted
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full justify-start border-green-300 text-green-700 hover:bg-green-50 disabled:opacity-40"
+                disabled={docStatus !== "submitted"}
+                onClick={() => setDocsAction("verified")}
+              >
+                <CheckCircle2 className="mr-2 h-4 w-4" /> Mark Verified
+              </Button>
             </CardContent>
           </Card>
 
-          {/* Additional Actions */}
+          {/* Finance ── */}
           <RoleGuard permissions={PERMISSIONS.MANAGE_OWN_BOOKINGS}>
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
-                  <CreditCard className="h-4 w-4" /> Finance
+              <CardHeader className="pb-3 border-b">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <CreditCard className="h-4 w-4 text-muted-foreground" />
+                  Finance
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
-                <Button variant="outline" className="w-full" onClick={() => setOvertimeOpen(true)}>
-                  Add Overtime Charge
+              <CardContent className="pt-4 space-y-2">
+                <Button variant="outline" className="w-full justify-start" onClick={() => setOvertimeOpen(true)}>
+                  <Timer className="mr-2 h-4 w-4" /> Add Overtime Charge
                 </Button>
-                <Button variant="outline" className="w-full" onClick={() => setDeadlineOpen(true)}>
-                  Extend Payment Deadline
+                <Button variant="outline" className="w-full justify-start" onClick={() => setDeadlineOpen(true)}>
+                  <Clock className="mr-2 h-4 w-4" /> Extend Payment Deadline
                 </Button>
-                <Button variant="outline"
-                  className="w-full border-amber-300 text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950"
-                  disabled={!pricing.depositAmount || pricing.depositRefunded}
-                  onClick={() => setRefundOpen(true)}>
-                  {pricing.depositRefunded ? "Deposit Refunded" : "Refund Deposit"}
-                </Button>
+                {(pricing.depositAmount ?? 0) > 0 && (
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start border-amber-300 text-amber-700 hover:bg-amber-50 disabled:opacity-40"
+                    disabled={
+                      pricing.depositRefunded ||
+                      status !== "confirmed"
+                    }
+                    title={pricing.depositRefunded
+                      ? "Already refunded"
+                      : status !== "confirmed"
+                      ? "Refund only available for confirmed bookings"
+                      : undefined
+                    }
+                    onClick={() => setRefundOpen(true)}
+                  >
+                    <Banknote className="mr-2 h-4 w-4" />
+                    {pricing.depositRefunded ? "Deposit Refunded" : "Refund Deposit"}
+                  </Button>
+                )}
               </CardContent>
             </Card>
           </RoleGuard>
+
         </div>
       </div>
 
@@ -533,16 +641,22 @@ export default function BookingDetail() {
       <AlertDialog open={refundOpen} onOpenChange={setRefundOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Trigger Deposit Refund?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will initiate a refund of {formatINR(pricing.depositAmount ?? 0)} and cannot be undone.
+            <AlertDialogTitle>Refund Security Deposit?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>This will initiate a refund of <strong className="text-foreground">{formatINR(pricing.depositAmount ?? 0)}</strong> to the customer and cannot be undone.</p>
+                {pricing.amountCharged && (
+                  <p className="text-xs">Customer paid {formatINR(pricing.amountCharged)} total ({formatINR(pricing.totalAmount ?? 0)} booking cost + {formatINR(pricing.depositAmount ?? 0)} deposit).</p>
+                )}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => refundMutation.mutate()} disabled={refundMutation.isPending}>
+            <AlertDialogAction onClick={() => refundMutation.mutate()} disabled={refundMutation.isPending}
+              className="bg-amber-600 hover:bg-amber-700 text-white">
               {refundMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Initiate Refund
+              Confirm Refund
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

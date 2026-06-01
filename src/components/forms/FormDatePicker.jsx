@@ -30,11 +30,15 @@ export default function FormDatePicker({ control, name, label, placeholder = "Pi
                 </Button>
               </FormControl>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
+            <PopoverContent className="w-[300px] p-0" align="start">
               <Calendar
                 mode="single"
                 selected={field.value ? new Date(field.value) : undefined}
                 onSelect={field.onChange}
+                className="w-full [--cell-size:2.25rem]"
+                captionLayout="dropdown"
+                fromYear={2020}
+                toYear={2035}
                 initialFocus
               />
             </PopoverContent>
