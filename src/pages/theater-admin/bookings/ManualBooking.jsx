@@ -476,21 +476,55 @@ function TimeFields({ control, setValue, audi }) {
 
   // ─── Fixed mode ───────────────────────────────────────────────────────────
   if (mode === "fixed") {
+    const multiCfg     = audi?.config?.multiSlot ?? {}
+    const multiAllowed = multiCfg.allowed !== false
+    const allowGaps    = multiCfg.allowGapBetweenSlots ?? false
+    const maxSlots     = multiAllowed ? (multiCfg.maxSlotsPerBooking ?? Infinity) : 1
+
+    // Sort active slots by startTime — needed for adjacency checks
+    const sortedSlots = [...activeSlots].sort(
+      (a, b) => toMins(a.config?.startTime ?? "00:00") - toMins(b.config?.startTime ?? "00:00")
+    )
+
     return (
       <FormField control={control} name="slotIds" render={({ field }) => {
         const selectedIds = Array.isArray(field.value) ? field.value : []
+
+        // Get the current block's start/end boundary (sorted selection)
+        const selectedObjs  = sortedSlots.filter(s => selectedIds.includes(s.slotId ?? s._id))
+        const blockStart    = selectedObjs[0]?.config?.startTime ?? null
+        const blockEnd      = selectedObjs[selectedObjs.length - 1]?.config?.endTime ?? null
+
+        // A slot is adjacent to the current block if it abuts either edge
+        const isAdjacentToBlock = (s) =>
+          s.config?.startTime === blockEnd || s.config?.endTime === blockStart
+
         const toggle = (id) => {
-          const next = selectedIds.includes(id)
-            ? selectedIds.filter(x => x !== id)
-            : [...selectedIds, id]
-          field.onChange(next)
+          if (selectedIds.includes(id)) {
+            field.onChange(selectedIds.filter(x => x !== id))
+            return
+          }
+          if (!multiAllowed) { field.onChange([id]); return }
+          if (selectedIds.length >= maxSlots) {
+            toast.error(`Max ${maxSlots} slot${maxSlots > 1 ? "s" : ""} per booking`)
+            return
+          }
+          const slot = sortedSlots.find(s => (s.slotId ?? s._id) === id)
+          if (!allowGaps && selectedIds.length > 0 && slot && !isAdjacentToBlock(slot)) {
+            toast.error("Slots must be consecutive — select the slot directly before or after your current selection")
+            return
+          }
+          field.onChange([...selectedIds, id])
         }
+
         return (
           <FormItem>
             <FormLabel>
-              Select Slot(s)
+              {multiAllowed ? "Select Slot(s)" : "Select Slot"}
               {selectedIds.length > 1 && (
-                <Badge variant="secondary" className="ml-2 text-xs">Multi-slot booking</Badge>
+                <Badge variant="secondary" className="ml-2 text-xs">
+                  {selectedIds.length} slots
+                </Badge>
               )}
             </FormLabel>
             <FormControl>
@@ -498,31 +532,65 @@ function TimeFields({ control, setValue, audi }) {
                 <div className="flex items-center gap-2 h-10 px-3 border rounded-md text-sm text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading slots…
                 </div>
-              ) : activeSlots.length === 0 ? (
+              ) : sortedSlots.length === 0 ? (
                 <div className="flex items-center h-10 px-3 border rounded-md text-sm text-muted-foreground bg-muted/30">
                   No active slots available for this audi
                 </div>
               ) : (
                 <div className="space-y-1 border rounded-md p-2">
-                  {activeSlots.map(s => {
+                  {sortedSlots.map(s => {
                     const id      = s.slotId ?? s._id
                     const checked = selectedIds.includes(id)
                     const hours   = s.config?.hours
+                    // Non-adjacent to current block → disable when gaps not allowed
+                    const notAdjacent = !allowGaps && !checked && selectedIds.length > 0
+                      && !isAdjacentToBlock(s)
+                    // Compute gap size for tooltip
+                    const gapToBlock = notAdjacent ? (() => {
+                      const slotEnd   = toMins(s.config?.endTime   ?? "00:00")
+                      const slotStart = toMins(s.config?.startTime ?? "00:00")
+                      const blockEndM   = toMins(blockEnd   ?? "00:00")
+                      const blockStartM = toMins(blockStart ?? "00:00")
+                      if (slotStart > blockEndM)   return slotStart - blockEndM
+                      if (slotEnd   < blockStartM) return blockStartM - slotEnd
+                      return 0
+                    })() : 0
+                    // Disable if max reached and not already selected
+                    const atMax = !checked && selectedIds.length >= maxSlots
+
                     return (
                       <div key={id}
-                        className={`flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer transition-colors hover:bg-accent/10 ${
-                          checked ? "bg-nfdc-accent/5 border border-nfdc-accent/30" : ""
-                        }`}
-                        onClick={() => toggle(id)}
+                        className={cn(
+                          "flex items-center gap-3 px-2 py-2 rounded-md transition-colors",
+                          (notAdjacent || atMax) ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:bg-accent/10",
+                          checked ? "bg-nfdc-accent/5 border border-nfdc-accent/30" : "",
+                        )}
+                        title={
+                          notAdjacent
+                            ? `${gapToBlock}min gap — slots must be consecutive (no gaps allowed)`
+                            : atMax
+                            ? `Max ${maxSlots} slots per booking`
+                            : undefined
+                        }
+                        onClick={() => { if (!notAdjacent && !atMax) toggle(id) }}
                       >
-                        <Checkbox checked={checked} onCheckedChange={() => toggle(id)}
-                          onClick={e => e.stopPropagation()} />
+                        <Checkbox
+                          checked={checked}
+                          disabled={notAdjacent || atMax}
+                          onCheckedChange={() => { if (!notAdjacent && !atMax) toggle(id) }}
+                          onClick={e => e.stopPropagation()}
+                        />
                         <div className="flex-1 min-w-0">
                           <span className="font-medium text-sm">{s.name}</span>
                           <span className="text-muted-foreground text-xs ml-2">
                             {s.config?.startTime}–{s.config?.endTime}
                             {hours ? ` (${hours}h)` : ""}
                           </span>
+                          {notAdjacent && gapToBlock > 0 && (
+                            <span className="text-[11px] text-amber-600 ml-2">
+                              {gapToBlock}min gap
+                            </span>
+                          )}
                         </div>
                         {checked && <Badge variant="secondary" className="text-xs shrink-0">✓</Badge>}
                       </div>
@@ -531,12 +599,37 @@ function TimeFields({ control, setValue, audi }) {
                 </div>
               )}
             </FormControl>
-            {selectedIds.length > 1 && (
-              <p className="text-xs text-muted-foreground flex items-center gap-1">
-                <Info className="h-3 w-3" />
-                {selectedIds.length} slots selected — booking will cover all selected time ranges
-              </p>
-            )}
+            <div className="space-y-0.5">
+              {!multiAllowed && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Info className="h-3 w-3" /> Single-slot booking only for this audi
+                </p>
+              )}
+              {multiAllowed && !allowGaps && selectedIds.length > 0 && (
+                <p className="text-xs text-amber-600 flex items-center gap-1">
+                  <Info className="h-3 w-3 shrink-0" />
+                  Gaps not allowed — only slots adjacent to {blockStart}–{blockEnd} can be added.
+                  Grayed slots have a time gap.
+                </p>
+              )}
+              {multiAllowed && !allowGaps && selectedIds.length === 0 && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Info className="h-3 w-3 shrink-0" />
+                  Slots must be consecutive — no time gaps between selected slots
+                </p>
+              )}
+              {multiAllowed && maxSlots < Infinity && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Info className="h-3 w-3" /> Max {maxSlots} slot{maxSlots > 1 ? "s" : ""} per booking
+                </p>
+              )}
+              {selectedIds.length > 1 && blockStart && blockEnd && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Info className="h-3 w-3" />
+                  {selectedIds.length} slots selected · total session {blockStart} – {blockEnd}
+                </p>
+              )}
+            </div>
             <FormMessage />
           </FormItem>
         )
@@ -993,6 +1086,33 @@ function BookingForm({ schema, onSubmit, isPending, audiList, submitLabel }) {
           />
         </div>
 
+        {/* Audi config summary — shown when an audi is selected */}
+        {selectedAudi && (() => {
+          const cfg       = selectedAudi.config ?? {}
+          const ms        = cfg.multiSlot ?? {}
+          const isFixed   = cfg.slotMode === "fixed"
+          const isFlexible= cfg.slotMode === "flexible"
+          return (
+            <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Audi Details</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5 text-xs">
+                <span className="text-muted-foreground">Mode <span className="font-medium text-foreground capitalize">{cfg.slotMode ?? "—"}</span></span>
+                {cfg.capacity && <span className="text-muted-foreground">Capacity <span className="font-medium text-foreground">{cfg.capacity} seats</span></span>}
+                {(cfg.operationalHours?.start || cfg.operationalHours?.end) && (
+                  <span className="text-muted-foreground">Hours <span className="font-medium text-foreground">{cfg.operationalHours.start}–{cfg.operationalHours.end}</span></span>
+                )}
+                {cfg.paymentDeadlineHours && <span className="text-muted-foreground">Pay deadline <span className="font-medium text-foreground">{cfg.paymentDeadlineHours}h</span></span>}
+                {cfg.bufferTime > 0 && <span className="text-muted-foreground">Buffer <span className="font-medium text-foreground">{cfg.bufferTime} min</span></span>}
+                {cfg.overtime?.allowed && <span className="text-muted-foreground">Overtime <span className="font-medium text-foreground">{cfg.overtime.rateMultiplier ?? 2}× rate</span></span>}
+                {isFixed && <span className="text-muted-foreground">Multi-slot <span className={`font-medium ${ms.allowed !== false ? "text-foreground" : "text-muted-foreground"}`}>{ms.allowed !== false ? "Allowed" : "Single only"}</span></span>}
+                {isFixed && ms.allowed !== false && ms.maxSlotsPerBooking && <span className="text-muted-foreground">Max slots <span className="font-medium text-foreground">{ms.maxSlotsPerBooking}</span></span>}
+                {isFixed && ms.allowed !== false && <span className="text-muted-foreground">Slot selection <span className="font-medium text-foreground">{ms.allowGapBetweenSlots ? "Any combination" : "Consecutive only"}</span></span>}
+                {isFlexible && cfg.bookingDurations?.length > 0 && <span className="col-span-2 text-muted-foreground">Durations <span className="font-medium text-foreground">{cfg.bookingDurations.map(d => `${d}h`).join(", ")}</span></span>}
+              </div>
+            </div>
+          )
+        })()}
+
         <AvailabilityCalendar
           control={form.control}
           setValue={form.setValue}
@@ -1072,7 +1192,9 @@ export default function ManualBooking() {
     enabled:  !!theaterId,
   })
 
-  const audiList = Array.isArray(audis?.data) ? audis.data : Array.isArray(audis) ? audis : []
+  // Only active audis can be manually booked
+  const audiList = (Array.isArray(audis?.data) ? audis.data : Array.isArray(audis) ? audis : [])
+    .filter(a => a.lifecycle?.status === "active")
 
   const formatPayload = (values) => {
     const svcsCache   = queryClient.getQueryData(["services-grouped", values.audiId])

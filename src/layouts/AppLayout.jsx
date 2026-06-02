@@ -12,6 +12,7 @@ import Sidebar from "@/components/common/Sidebar"
 import Topbar from "@/components/common/Topbar"
 import LoadingSpinner from "@/components/common/LoadingSpinner"
 import ErrorBoundary from "@/components/common/ErrorBoundary"
+import HelpGuide from "@/components/common/HelpGuide"
 import { useAuth } from "@/hooks/useAuth"
 import { getTheaterProfile } from "@/api/theaters"
 import { NAV_ITEMS } from "@/config/navConfig"
@@ -66,6 +67,7 @@ export default function AppLayout({ requiredRole }) {
           </ErrorBoundary>
         </main>
       </div>
+      {isTheaterAdmin && <HelpGuide />}
     </div>
   )
 }
