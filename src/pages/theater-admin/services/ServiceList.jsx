@@ -53,13 +53,13 @@ import EmptyState from "@/components/common/EmptyState"
 import StatusBadge from "@/components/common/StatusBadge"
 import FormInput from "@/components/forms/FormInput"
 import { useAuth } from "@/hooks/useAuth"
-import { listAudis } from "@/api/audi"
+import { listAdminAudis } from "@/api/audi"
 import {
   listServicesGrouped,
   createService, updateService, updateServiceStatus, moveService,
   createSection, updateSection, updateSectionStatus, reorderSection,
 } from "@/api/services"
-import { formatINR } from "@/utils/formatCurrency"
+
 
 // ─── Schemas ───────────────────────────────────────────────────────────────────
 
@@ -70,10 +70,8 @@ const sectionSchema = z.object({
 })
 
 const serviceSchema = z.object({
-  name:           z.string().min(1, "Name is required"),
-  pricingGovt:    z.coerce.number().min(0).optional().or(z.literal("")),
-  pricingNonGovt: z.coerce.number().min(0).optional().or(z.literal("")),
-  isMandatory:    z.boolean().optional(),
+  name:        z.string().min(1, "Name is required"),
+  isMandatory: z.boolean().optional(),
 })
 
 // ─── Section Dialog ────────────────────────────────────────────────────────────
@@ -161,7 +159,7 @@ function ServiceDialog({ open, onOpenChange, scopeParams, sectionId, editingServ
 
   const form = useForm({
     resolver: zodResolver(serviceSchema),
-    defaultValues: { name: "", pricingGovt: "", pricingNonGovt: "", isMandatory: false },
+    defaultValues: { name: "", isMandatory: false },
   })
 
   const [targetSection, setTargetSection] = useState(sectionId ?? "none")
@@ -170,20 +168,14 @@ function ServiceDialog({ open, onOpenChange, scopeParams, sectionId, editingServ
     if (!open) return
     setTargetSection(sectionId ?? editingService?.relationships?.sectionId ?? "none")
     form.reset(editingService ? {
-      name:           editingService.name ?? "",
-      pricingGovt:    editingService.config?.pricing?.govt ?? "",
-      pricingNonGovt: editingService.config?.pricing?.nonGovt ?? "",
-      isMandatory:    editingService.config?.isMandatory ?? false,
-    } : { name: "", pricingGovt: "", pricingNonGovt: "", isMandatory: false })
+      name:        editingService.name ?? "",
+      isMandatory: editingService.config?.isMandatory ?? false,
+    } : { name: "", isMandatory: false })
   }, [open, editingService, sectionId, form])
 
   const mutation = useMutation({
     mutationFn: (v) => {
       const config = {
-        pricing: {
-          govt:    v.pricingGovt    !== "" ? Number(v.pricingGovt)    : undefined,
-          nonGovt: v.pricingNonGovt !== "" ? Number(v.pricingNonGovt) : undefined,
-        },
         isMandatory: v.isMandatory ?? false,
       }
       const resolvedSection = targetSection !== "none" ? targetSection : undefined
@@ -217,16 +209,6 @@ function ServiceDialog({ open, onOpenChange, scopeParams, sectionId, editingServ
         <Form {...form}>
           <form onSubmit={form.handleSubmit(v => mutation.mutate(v))} className="space-y-4">
             <FormInput control={form.control} name="name" label="Service Name" placeholder="DSLR Photography" />
-
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Pricing (optional)</p>
-              <div className="grid grid-cols-2 gap-4">
-                <FormInput control={form.control} name="pricingGovt"
-                  label="Govt Rate (₹)" type="number" placeholder="e.g. 500" />
-                <FormInput control={form.control} name="pricingNonGovt"
-                  label="Non-Govt Rate (₹)" type="number" placeholder="e.g. 1000" />
-              </div>
-            </div>
 
             <div className="space-y-1">
               <Label className="text-sm font-medium">Section</Label>
@@ -307,8 +289,6 @@ function ServiceHistorySheet({ svc, open, onClose, cacheKey }) {
 
   if (!localSvc) return null
 
-  const pricing = localSvc.config?.pricing
-
   return (
     <Sheet open={open} onOpenChange={o => !o && onClose()}>
       <SheetContent className="w-full sm:max-w-md flex flex-col gap-0 p-0">
@@ -322,18 +302,10 @@ function ServiceHistorySheet({ svc, open, onClose, cacheKey }) {
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
 
-          {/* Service info chips */}
-          {(localSvc.config?.isMandatory || pricing?.govt != null || pricing?.nonGovt != null) && (
+          {/* Service info chip */}
+          {localSvc.config?.isMandatory && (
             <div className="flex flex-wrap gap-2 text-xs">
-              {localSvc.config?.isMandatory && (
-                <Badge variant="secondary">Mandatory</Badge>
-              )}
-              {pricing?.govt != null && (
-                <Badge variant="outline">Govt: {formatINR(pricing.govt)}</Badge>
-              )}
-              {pricing?.nonGovt != null && (
-                <Badge variant="outline">Non-Govt: {formatINR(pricing.nonGovt)}</Badge>
-              )}
+              <Badge variant="secondary">Mandatory</Badge>
             </div>
           )}
 
@@ -441,7 +413,6 @@ function ServiceHistorySheet({ svc, open, onClose, cacheKey }) {
 // ─── Service Row ───────────────────────────────────────────────────────────────
 
 function ServiceRow({ svc, onEdit, onToggleStatus, onViewHistory }) {
-  const pricing     = svc.config?.pricing
   const isActive    = svc.lifecycle?.status === "active"
   const isMandatory = svc.config?.isMandatory
 
@@ -456,13 +427,6 @@ function ServiceRow({ svc, onEdit, onToggleStatus, onViewHistory }) {
             )}
             <StatusBadge status={svc.lifecycle?.status} />
           </div>
-          {pricing && (pricing.govt != null || pricing.nonGovt != null) && (
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {pricing.govt    != null && `Govt: ${formatINR(pricing.govt)}`}
-              {pricing.govt != null && pricing.nonGovt != null && " · "}
-              {pricing.nonGovt != null && `Non-Govt: ${formatINR(pricing.nonGovt)}`}
-            </p>
-          )}
         </div>
       </div>
 
@@ -642,7 +606,7 @@ export default function ServiceList() {
 
   const { data: audisRaw } = useQuery({
     queryKey: ["audis", theaterId],
-    queryFn: () => listAudis(theaterId).then(r => r.data.data),
+    queryFn: () => listAdminAudis(theaterId).then(r => r.data.data),
     enabled: !!theaterId,
   })
   const allAudis = Array.isArray(audisRaw?.data) ? audisRaw.data : []

@@ -32,7 +32,7 @@ import FormDatePicker from "@/components/forms/FormDatePicker"
 import FormInput from "@/components/forms/FormInput"
 import FormTextarea from "@/components/forms/FormTextarea"
 import { useAuth } from "@/hooks/useAuth"
-import { listAudis } from "@/api/audi"
+import { listAdminAudis } from "@/api/audi"
 import { listBlocks, createFullDayBlock, createPartialBlock, deactivateBlock } from "@/api/adminBlocks"
 import { parseList } from "@/utils/parseList"
 import { toAPIDate } from "@/utils/formatDate"
@@ -114,7 +114,7 @@ export default function BlockManager() {
   // ── Queries ──────────────────────────────────────────────────────────────────
   const { data: audisRaw } = useQuery({
     queryKey: ["audis", theaterId],
-    queryFn:  () => listAudis(theaterId).then(r => r.data.data),
+    queryFn:  () => listAdminAudis(theaterId).then(r => r.data.data),
     enabled:  !!theaterId,
   })
   const audis = Array.isArray(audisRaw?.data) ? audisRaw.data : Array.isArray(audisRaw) ? audisRaw : []

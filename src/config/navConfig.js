@@ -78,6 +78,7 @@ export const NAV_ITEMS = [
     path:  "/admin/reschedule",
     icon:  CalendarClock,
     roles: [ROLES.THEATER_ADMIN],
+    requiresReschedule: true,
   },
   {
     label: "Block Manager",

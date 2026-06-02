@@ -1,13 +1,16 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import {
   CheckCircle2, XCircle, CalendarClock, ArrowRight, Loader2,
-  Building2, Clock, Info, AlertCircle,
+  Building2, Clock, Info, AlertCircle, ChevronLeft, ChevronRight,
 } from "lucide-react"
-import { format } from "date-fns"
+import {
+  format, startOfMonth, endOfMonth, eachDayOfInterval, getDay,
+  isSameDay, isBefore, isAfter, addMonths, subMonths, startOfDay,
+} from "date-fns"
 import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -21,17 +24,20 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Form } from "@/components/ui/form"
+import { Form, FormField, FormItem, FormControl, FormMessage } from "@/components/ui/form"
 import PageHeader from "@/components/common/PageHeader"
 import EmptyState from "@/components/common/EmptyState"
 import StatusBadge from "@/components/common/StatusBadge"
 import FormInput from "@/components/forms/FormInput"
-import FormDatePicker from "@/components/forms/FormDatePicker"
 import FormTextarea from "@/components/forms/FormTextarea"
 import { listBookings, getBooking, updateBookingStatus } from "@/api/bookings"
+import { getAdminAudi } from "@/api/audi"
+import { getAudiCalendar } from "@/api/availability"
+import { listSlots } from "@/api/slots"
 import { parseList } from "@/utils/parseList"
 import { toAPIDate } from "@/utils/formatDate"
 import { formatINR } from "@/utils/formatCurrency"
+import { cn } from "@/lib/utils"
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -436,41 +442,193 @@ function RejectDialog({ target, onClose }) {
   )
 }
 
+// ─── Availability calendar constants ──────────────────────────────────────────
+
+const DAY_LABELS    = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]
+const toMins   = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m }
+const fromMins = m => `${String(Math.floor(m / 60)).padStart(2,"0")}:${String(m % 60).padStart(2,"0")}`
+
+const CAL_CELL = {
+  available:    "hover:bg-emerald-50",
+  partial:      "bg-amber-50/80 hover:bg-amber-100",
+  fully_booked: "bg-red-50",
+  blocked:      "bg-red-100",
+  locked:       "bg-slate-100",
+}
+const CAL_DOT = {
+  available:    "bg-emerald-500",
+  partial:      "bg-amber-500",
+  fully_booked: "bg-red-500",
+  blocked:      "bg-red-700",
+  locked:       "bg-slate-400",
+}
+const SLOT_COLORS = {
+  available: { text: "text-emerald-700", label: "Available"   },
+  booked:    { text: "text-red-700",     label: "Booked"      },
+  blocked:   { text: "text-orange-700",  label: "Blocked"     },
+  locked:    { text: "text-slate-500",   label: "Locked"      },
+}
+
 // ─── PostponeDialog ────────────────────────────────────────────────────────────
 
 function PostponeDialog({ open, onOpenChange }) {
   const queryClient = useQueryClient()
-  const [rawId,    setRawId]    = useState("")
-  const [booking,  setBooking]  = useState(null)
-  const [fetching, setFetching] = useState(false)
+
+  const [rawId,         setRawId]         = useState("")
+  const [booking,       setBooking]       = useState(null)
+  const [fetching,      setFetching]      = useState(false)
+  const [currentMonth,  setCurrentMonth]  = useState(new Date())
+  const [selectedDate,  setSelectedDate]  = useState(null)
+  const [selectedSlotId, setSelectedSlotId] = useState(null)
 
   const form = useForm({
     resolver:      zodResolver(postponeSchema),
     defaultValues: { action: "postpone", date: undefined, startTime: "", endTime: "", note: "" },
   })
 
+  const watchedAction    = form.watch("action")
+  const watchedStartTime = form.watch("startTime") ?? ""
+  const watchedEndTime   = form.watch("endTime")   ?? ""
+
+  // Derived booking fields
+  const audiId  = booking?.relationships?.audiId
+  const monthStr = format(currentMonth, "yyyy-MM")
+  const dateStr  = selectedDate ? toAPIDate(selectedDate) : null
+
+  // ── Audi config ────────────────────────────────────────────────────────────
+  const { data: audiRaw } = useQuery({
+    queryKey: ["audi-admin", audiId],
+    queryFn:  () => getAdminAudi(audiId).then(r => r.data.data),
+    enabled:  !!audiId,
+    staleTime: 60_000,
+  })
+  const audi      = audiRaw?.audi ?? audiRaw
+  const mode      = audi?.config?.slotMode
+  const opStart   = audi?.config?.operationalHours?.start ?? ""
+  const opEnd     = audi?.config?.operationalHours?.end   ?? ""
+  const durations = audi?.config?.bookingDurations ?? []
+  const opStartMins = opStart ? toMins(opStart) : 0
+  const opEndMins   = opEnd   ? toMins(opEnd)   : 24 * 60
+
+  // ── Calendar availability ──────────────────────────────────────────────────
+  const { data: calData } = useQuery({
+    queryKey: ["audi-calendar", audiId, monthStr],
+    queryFn:  () => getAudiCalendar(audiId, monthStr).then(r => r.data.data),
+    enabled:  !!audiId,
+    staleTime: 60_000,
+  })
+  const calendar = calData?.calendar ?? {}
+  const dayData  = dateStr ? (calendar[dateStr] ?? null) : null
+
+  // ── Slots (fixed mode) ─────────────────────────────────────────────────────
+  const { data: slotsRaw } = useQuery({
+    queryKey: ["slots", audiId],
+    queryFn:  () => listSlots(audiId).then(r => {
+      const raw = r.data.data
+      return Array.isArray(raw?.data) ? raw.data : Array.isArray(raw) ? raw : []
+    }),
+    enabled:  !!audiId && mode === "fixed",
+    staleTime: 60_000,
+  })
+  const activeSlots = (Array.isArray(slotsRaw?.data) ? slotsRaw.data : Array.isArray(slotsRaw) ? slotsRaw : [])
+    .filter(s => s.lifecycle?.status === "active")
+
+  // ── Booked windows + free windows (flexible mode) ─────────────────────────
+  const bookedWindows = useMemo(() => {
+    const bw = dayData?.bookedWindows ?? []
+    return bw.map(w => ({ start: toMins(w.startTime), end: toMins(w.endTime) }))
+              .sort((a, b) => a.start - b.start)
+  }, [dayData])
+
+  const availableWindows = useMemo(() => {
+    if (!dateStr) return []
+    const windows = []; let cursor = opStartMins
+    for (const bw of bookedWindows) {
+      if (cursor < bw.start) windows.push({ start: cursor, end: bw.start })
+      cursor = Math.max(cursor, bw.end)
+    }
+    if (cursor < opEndMins) windows.push({ start: cursor, end: opEndMins })
+    return windows
+  }, [dateStr, bookedWindows, opStartMins, opEndMins])
+
+  const isSlotFree = (startT, durationH) => {
+    if (!startT) return false
+    const sMin = toMins(startT), eMin = sMin + durationH * 60
+    if (eMin > opEndMins) return false
+    return !bookedWindows.some(bw => sMin < bw.end && eMin > bw.start)
+  }
+
+  const activeDuration = durations.find(d =>
+    watchedStartTime && watchedEndTime &&
+    toMins(watchedStartTime) + d * 60 === toMins(watchedEndTime)
+  ) ?? null
+
+  // ── Auto-set start time when date changes (flexible) ──────────────────────
+  useEffect(() => {
+    if (mode !== "flexible" || !dateStr || !availableWindows.length) return
+    if (!form.getValues("startTime") && availableWindows[0]) {
+      form.setValue("startTime", fromMins(availableWindows[0].start), { shouldValidate: false })
+    }
+  }, [dateStr, availableWindows, mode]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Calendar display ───────────────────────────────────────────────────────
+  const monthStart   = startOfMonth(currentMonth)
+  const monthEnd     = endOfMonth(currentMonth)
+  const days         = eachDayOfInterval({ start: monthStart, end: monthEnd })
+  const startPadding = getDay(monthStart)
+  const todayStart  = startOfDay(new Date())
+  const bookingDate = booking?.bookingDetails?.date
+    ? startOfDay(new Date(booking.bookingDetails.date))
+    : null
+
+  // Direction-specific guard: postpone → must be after booking date
+  //                           prepone  → must be >= today AND before booking date
+  const isDayDisabled = (day) => {
+    if (isBefore(day, todayStart)) return true
+    if (!bookingDate) return false
+    if (watchedAction === "postpone") return !isAfter(day, bookingDate)
+    if (watchedAction === "prepone")  return !isBefore(day, bookingDate)
+    return false
+  }
+
+  const handleDayClick = (day) => {
+    if (isDayDisabled(day)) return
+    setSelectedDate(day)
+    setSelectedSlotId(null)
+    form.setValue("date",      day, { shouldValidate: true })
+    form.setValue("startTime", "",  { shouldValidate: false })
+    form.setValue("endTime",   "",  { shouldValidate: false })
+  }
+
+  const handleSlotSelect = (slot) => {
+    setSelectedSlotId(slot.slotId ?? slot._id)
+    form.setValue("startTime", slot.config?.startTime ?? "", { shouldValidate: true })
+    form.setValue("endTime",   slot.config?.endTime   ?? "", { shouldValidate: true })
+  }
+
+  const getSlotStatus = (slot) => {
+    if (!dayData?.slots) return null
+    return dayData.slots.find(ds => ds.slotId === (slot.slotId ?? slot._id))?.status ?? null
+  }
+
+  // ── Handlers ───────────────────────────────────────────────────────────────
   const handleClose = () => {
-    setRawId("")
-    setBooking(null)
-    form.reset()
-    onOpenChange(false)
+    setRawId(""); setBooking(null); setSelectedDate(null)
+    setSelectedSlotId(null); setCurrentMonth(new Date())
+    form.reset(); onOpenChange(false)
   }
 
   const handleFetch = async () => {
     const id = rawId.trim()
     if (!id) return
-    setFetching(true)
-    setBooking(null)
+    setFetching(true); setBooking(null)
     try {
       const r = await getBooking(id)
       const raw = r.data.data ?? r.data
       setBooking(raw?.booking ?? raw)
       form.reset({ action: "postpone", date: undefined, startTime: "", endTime: "", note: "" })
-    } catch {
-      toast.error("Booking not found or access denied")
-    } finally {
-      setFetching(false)
-    }
+    } catch { toast.error("Booking not found or access denied") }
+    finally { setFetching(false) }
   }
 
   const mutation = useMutation({
@@ -494,39 +652,30 @@ function PostponeDialog({ open, onOpenChange }) {
 
   return (
     <Dialog open={open} onOpenChange={o => { if (!o) handleClose() }}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] flex flex-col" aria-describedby={undefined}>
+      <DialogContent className="sm:max-w-lg max-h-[92vh] flex flex-col" aria-describedby={undefined}>
         <DialogHeader className="shrink-0">
           <DialogTitle>Propose New Dates</DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-4 py-2 pr-1">
+
           {/* Booking ID lookup */}
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Booking ID</Label>
             <div className="flex gap-2">
-              <Input
-                placeholder="e.g. NFDC-2026-001"
-                value={rawId}
+              <Input placeholder="e.g. NFDC-2026-001" value={rawId}
                 onChange={e => setRawId(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleFetch()}
-                className="h-9"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleFetch}
-                disabled={!rawId.trim() || fetching}
-                className="shrink-0"
-              >
+                onKeyDown={e => e.key === "Enter" && handleFetch()} className="h-9" />
+              <Button type="button" variant="outline" size="sm" onClick={handleFetch}
+                disabled={!rawId.trim() || fetching} className="shrink-0">
                 {fetching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Fetch"}
               </Button>
             </div>
           </div>
 
-          {/* Booking summary */}
           {booking && (
             <>
+              {/* Booking summary */}
               <div className="rounded-lg border bg-muted/30 p-3 space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono text-xs font-medium text-muted-foreground">{booking.bookingId}</span>
@@ -536,12 +685,12 @@ function PostponeDialog({ open, onOpenChange }) {
                   <Avatar name={bUserName} colorClass="bg-nfdc-primary/10 text-nfdc-primary" />
                   <div className="min-w-0 space-y-0.5">
                     <p className="text-sm font-medium truncate">{bUserName ?? "—"}</p>
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
                       <Building2 className="h-3 w-3 shrink-0" />
                       <span className="truncate">{bAudiName ?? "—"}</span>
                       <span className="text-border">·</span>
                       <CalendarClock className="h-3 w-3 shrink-0" />
-                      <span className="truncate tabular-nums">
+                      <span className="tabular-nums">
                         {fmtDate(booking.bookingDetails?.date ?? booking.date)}{" "}
                         {fmtRange(booking.bookingDetails?.startTime ?? booking.startTime, booking.bookingDetails?.endTime ?? booking.endTime)}
                       </span>
@@ -553,26 +702,29 @@ function PostponeDialog({ open, onOpenChange }) {
               <Separator />
 
               <Form {...form}>
-                <form id="postpone-form" onSubmit={form.handleSubmit(v => mutation.mutate(v))} className="space-y-4">
+                <form id="postpone-form" onSubmit={form.handleSubmit(v => mutation.mutate(v))} className="space-y-5">
+
+                  {/* Action */}
                   <div className="space-y-2">
                     <Label className="text-sm font-medium">Action</Label>
-                    <RadioGroup
-                      value={form.watch("action")}
-                      onValueChange={v => form.setValue("action", v, { shouldValidate: true })}
-                      className="grid grid-cols-2 gap-2"
-                    >
+                    <RadioGroup value={watchedAction}
+                      onValueChange={v => {
+                        form.setValue("action", v, { shouldValidate: true })
+                        // Clear selected date — it may be invalid for the new direction
+                        setSelectedDate(null); setSelectedSlotId(null)
+                        form.setValue("date", undefined, { shouldValidate: false })
+                        form.setValue("startTime", "", { shouldValidate: false })
+                        form.setValue("endTime",   "", { shouldValidate: false })
+                      }}
+                      className="grid grid-cols-2 gap-2">
                       {[
-                        { value: "postpone", label: "Postpone", desc: "Later date" },
-                        { value: "prepone",  label: "Prepone",  desc: "Earlier date" },
+                        { value: "postpone", label: "Postpone", desc: "Move to later date" },
+                        { value: "prepone",  label: "Prepone",  desc: "Move to earlier date" },
                       ].map(opt => (
-                        <label
-                          key={opt.value}
-                          className={`flex items-start gap-2.5 rounded-lg border p-3 cursor-pointer transition-colors ${
-                            form.watch("action") === opt.value
-                              ? "border-blue-600 bg-blue-50"
-                              : "border-border hover:bg-muted/40"
-                          }`}
-                        >
+                        <label key={opt.value} className={cn(
+                          "flex items-start gap-2.5 rounded-lg border p-3 cursor-pointer transition-colors",
+                          watchedAction === opt.value ? "border-blue-600 bg-blue-50" : "border-border hover:bg-muted/40"
+                        )}>
                           <RadioGroupItem value={opt.value} id={`r-${opt.value}`} className="mt-0.5" />
                           <div>
                             <p className="text-sm font-medium leading-none">{opt.label}</p>
@@ -583,20 +735,199 @@ function PostponeDialog({ open, onOpenChange }) {
                     </RadioGroup>
                   </div>
 
-                  <FormDatePicker control={form.control} name="date" label="New Date" />
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormInput control={form.control} name="startTime" label="Start Time" type="time" />
-                    <FormInput control={form.control} name="endTime"   label="End Time"   type="time" />
+                  {/* Availability Calendar */}
+                  <div className="space-y-1.5">
+                    <Label className="text-sm font-medium">
+                      Select New Date
+                      {selectedDate && (
+                        <span className="ml-2 text-xs font-normal text-nfdc-primary">
+                          {format(selectedDate, "dd MMM yyyy")} selected
+                        </span>
+                      )}
+                    </Label>
+                    <Card className="overflow-hidden">
+                      {/* Month nav */}
+                      <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
+                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
+                          onClick={() => setCurrentMonth(m => subMonths(m, 1))}>
+                          <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <span className="text-sm font-semibold">{format(currentMonth, "MMMM yyyy")}</span>
+                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
+                          onClick={() => setCurrentMonth(m => addMonths(m, 1))}>
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="p-2">
+                        <div className="grid grid-cols-7 mb-1">
+                          {DAY_LABELS.map(d => (
+                            <div key={d} className="h-6 flex items-center justify-center text-[10px] text-muted-foreground font-medium">{d}</div>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-7 gap-0.5">
+                          {Array.from({ length: startPadding }).map((_, i) => <div key={`p-${i}`} />)}
+                          {days.map(day => {
+                            const ds            = toAPIDate(day)
+                            const status        = calendar[ds]?.status
+                            const isDisabled    = isDayDisabled(day)
+                            const isSel         = selectedDate && isSameDay(day, selectedDate)
+                            const isBookingDay  = bookingDate && isSameDay(day, bookingDate)
+                            return (
+                              <button key={ds} type="button" disabled={isDisabled}
+                                onClick={() => handleDayClick(day)}
+                                className={cn(
+                                  "relative h-8 w-full flex flex-col items-center justify-center rounded-md text-xs transition-colors",
+                                  isDisabled   && "opacity-30 cursor-not-allowed",
+                                  !isDisabled && !isSel && !isBookingDay && (CAL_CELL[status] ?? "hover:bg-muted/60 cursor-pointer"),
+                                  isBookingDay && !isSel && "ring-2 ring-amber-400 ring-inset font-semibold text-amber-700 bg-amber-50",
+                                  isSel        && "bg-nfdc-primary text-white shadow-sm font-semibold",
+                                )}
+                              >
+                                <span>{format(day, "d")}</span>
+                                {!isSel && !isBookingDay && status && status !== "available" && (
+                                  <span className={cn("mt-0.5 h-1 w-1 rounded-full", CAL_DOT[status])} />
+                                )}
+                                {isBookingDay && !isSel && (
+                                  <span className="mt-0.5 h-1 w-1 rounded-full bg-amber-400" />
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                        {/* Legend */}
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-2 pt-2 border-t">
+                          {[["Available","bg-emerald-500"],["Partial","bg-amber-500"],["Fully Booked","bg-red-500"],["Blocked","bg-red-700"]].map(([l,d]) => (
+                            <span key={l} className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                              <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", d)} />{l}
+                            </span>
+                          ))}
+                          <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                            <span className="h-3 w-3 rounded-sm ring-2 ring-amber-400 shrink-0" /> Current Booking
+                          </span>
+                        </div>
+                      </div>
+                    </Card>
+                    {form.formState.errors.date && (
+                      <p className="text-sm text-destructive">{String(form.formState.errors.date.message)}</p>
+                    )}
                   </div>
 
-                  <FormTextarea
-                    control={form.control}
-                    name="note"
-                    label="Note"
-                    placeholder="Reason for the reschedule (optional)"
-                    rows={2}
-                  />
+                  {/* Slot / time selection — only when a date is chosen */}
+                  {selectedDate && (
+                    mode === "fixed" ? (
+                      /* ── Fixed mode: slot list ── */
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Select Slot</Label>
+                        {activeSlots.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">No active slots for this audi</p>
+                        ) : (
+                          <div className="border rounded-md divide-y">
+                            {activeSlots.map(slot => {
+                              const slotId    = slot.slotId ?? slot._id
+                              const slotSt    = getSlotStatus(slot)
+                              const available = !slotSt || slotSt === "available"
+                              const isSelected= selectedSlotId === slotId
+                              const cfg       = SLOT_COLORS[slotSt] ?? SLOT_COLORS.available
+                              return (
+                                <button key={slotId} type="button" disabled={!available}
+                                  onClick={() => handleSlotSelect(slot)}
+                                  className={cn(
+                                    "w-full flex items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors",
+                                    "disabled:opacity-40 disabled:cursor-not-allowed",
+                                    isSelected ? "bg-nfdc-primary/10 border-l-2 border-l-nfdc-primary" : "hover:bg-muted/40"
+                                  )}
+                                >
+                                  <span className="flex-1 font-medium">{slot.name}</span>
+                                  <span className="text-xs text-muted-foreground tabular-nums">
+                                    {slot.config?.startTime}–{slot.config?.endTime}
+                                  </span>
+                                  {slotSt && (
+                                    <span className={cn("text-[11px] font-medium capitalize", cfg.text)}>{cfg.label}</span>
+                                  )}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                        {/* Hidden time fields managed by slot click */}
+                        <FormField control={form.control} name="startTime" render={({ field }) => <input type="hidden" {...field} />} />
+                        <FormField control={form.control} name="endTime"   render={({ field }) => <input type="hidden" {...field} />} />
+                        {(form.formState.errors.startTime || form.formState.errors.endTime) && (
+                          <p className="text-sm text-destructive">Please select a slot</p>
+                        )}
+                      </div>
+                    ) : (
+                      /* ── Flexible mode: start time + duration chips ── */
+                      <div className="space-y-3">
+                        {/* Available windows hint */}
+                        {availableWindows.length > 0 && bookedWindows.length > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            Free:{" "}
+                            {availableWindows.map((w, i) => (
+                              <span key={i} className="font-medium text-foreground">
+                                {i > 0 && " · "}{fromMins(w.start)}–{fromMins(w.end)}
+                              </span>
+                            ))}
+                          </p>
+                        )}
+                        {availableWindows.length === 0 && dateStr && (
+                          <p className="text-xs text-destructive flex items-center gap-1">
+                            <Info className="h-3 w-3 shrink-0" /> No available time on this date
+                          </p>
+                        )}
+
+                        <FormInput control={form.control} name="startTime" label="Start Time" type="time" />
+
+                        {durations.length > 0 ? (
+                          <div className="space-y-2">
+                            <Label className="text-xs text-muted-foreground">Duration</Label>
+                            <div className="flex flex-wrap gap-2">
+                              {durations.map(d => {
+                                const base      = watchedStartTime || opStart
+                                const endMins   = base ? toMins(base) + d * 60 : null
+                                const exceeds   = endMins !== null && endMins > opEndMins
+                                const conflicts = !!base && !!dateStr && !isSlotFree(base, d)
+                                const isActive  = activeDuration === d
+                                return (
+                                  <button key={d} type="button"
+                                    disabled={exceeds || conflicts}
+                                    title={conflicts ? "Conflicts with an existing booking" : exceeds ? "Exceeds closing time" : undefined}
+                                    onClick={() => {
+                                      const base = watchedStartTime || opStart
+                                      if (!base) { toast.error("Set start time first"); return }
+                                      const computedEnd = toMins(base) + d * 60
+                                      if (!watchedStartTime && opStart) form.setValue("startTime", opStart, { shouldValidate: true })
+                                      form.setValue("endTime", fromMins(computedEnd), { shouldValidate: true })
+                                    }}
+                                    className={cn(
+                                      "px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed",
+                                      isActive
+                                        ? "bg-nfdc-primary text-white border-nfdc-primary"
+                                        : "bg-background border-border hover:border-nfdc-primary hover:text-nfdc-primary"
+                                    )}
+                                  >{d}h</button>
+                                )
+                              })}
+                            </div>
+                            {activeDuration && watchedEndTime && (
+                              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                <CheckCircle2 className="h-3 w-3 text-green-500" />
+                                {activeDuration}h · ends at <span className="font-medium text-foreground ml-1">{watchedEndTime}</span>
+                              </p>
+                            )}
+                            {/* Hidden end time managed by chip */}
+                            <FormField control={form.control} name="endTime" render={({ field }) => <input type="hidden" {...field} />} />
+                          </div>
+                        ) : (
+                          <FormInput control={form.control} name="endTime" label="End Time" type="time" />
+                        )}
+                      </div>
+                    )
+                  )}
+
+                  {/* Note */}
+                  <FormTextarea control={form.control} name="note" label="Note"
+                    placeholder="Reason for the reschedule (optional)" rows={2} />
                 </form>
               </Form>
             </>
@@ -606,12 +937,8 @@ function PostponeDialog({ open, onOpenChange }) {
         <DialogFooter className="shrink-0 pt-4 border-t">
           <Button type="button" variant="outline" onClick={handleClose}>Cancel</Button>
           {booking && (
-            <Button
-              type="submit"
-              form="postpone-form"
-              disabled={mutation.isPending}
-              className="bg-nfdc-primary hover:bg-nfdc-primary/90"
-            >
+            <Button type="submit" form="postpone-form" disabled={mutation.isPending}
+              className="bg-nfdc-primary hover:bg-nfdc-primary/90">
               {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Propose Dates
             </Button>

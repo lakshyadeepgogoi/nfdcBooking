@@ -7,11 +7,13 @@
  */
 import { useState } from "react"
 import { Navigate, Outlet } from "react-router-dom"
+import { useQuery } from "@tanstack/react-query"
 import Sidebar from "@/components/common/Sidebar"
 import Topbar from "@/components/common/Topbar"
 import LoadingSpinner from "@/components/common/LoadingSpinner"
 import ErrorBoundary from "@/components/common/ErrorBoundary"
 import { useAuth } from "@/hooks/useAuth"
+import { getTheaterProfile } from "@/api/theaters"
 import { NAV_ITEMS } from "@/config/navConfig"
 import { ROLES } from "@/auth/permissions"
 
@@ -21,17 +23,29 @@ const ROLE_TITLES = {
 }
 
 export default function AppLayout({ requiredRole }) {
-  const { isLoading, isAuthenticated, role } = useAuth()
+  const { isLoading, isAuthenticated, role, user } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
+
+  const isTheaterAdmin = role === ROLES.THEATER_ADMIN
+
+  const { data: theaterRaw } = useQuery({
+    queryKey: ["theater-profile", user?.theaterId],
+    queryFn:  () => getTheaterProfile(user?.theaterId).then(r => r.data.data),
+    enabled:  isTheaterAdmin && !!user?.theaterId,
+    staleTime: 5 * 60_000,
+  })
+  const allowUserReschedule = theaterRaw?.config?.allowUserReschedule ?? false
 
   if (isLoading) return <LoadingSpinner fullPage />
   if (!isAuthenticated) return <Navigate to="/login" replace />
   if (requiredRole && role !== requiredRole) return <Navigate to="/login" replace />
 
-  // Filter nav items to only those the current role may see
-  const navItems = NAV_ITEMS.filter(
-    (item) => !item.roles || item.roles.includes(role)
-  )
+  // Filter nav items by role, and by feature flags
+  const navItems = NAV_ITEMS.filter(item => {
+    if (item.roles && !item.roles.includes(role)) return false
+    if (item.requiresReschedule && !allowUserReschedule) return false
+    return true
+  })
 
   return (
     <div className="flex h-screen overflow-hidden">

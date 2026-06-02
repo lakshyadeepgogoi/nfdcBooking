@@ -1,6 +1,5 @@
 import { useEditor, EditorContent } from "@tiptap/react"
 import StarterKit from "@tiptap/starter-kit"
-import UnderlineExt from "@tiptap/extension-underline"
 import TextAlign from "@tiptap/extension-text-align"
 import Placeholder from "@tiptap/extension-placeholder"
 import { useRef, useEffect } from "react"
@@ -41,7 +40,6 @@ export function RichTextEditor({ content, onChange, placeholder, className, minH
   const editor = useEditor({
     extensions: [
       StarterKit,
-      UnderlineExt,
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       Placeholder.configure({ placeholder: placeholder ?? "Start writing…" }),
     ],

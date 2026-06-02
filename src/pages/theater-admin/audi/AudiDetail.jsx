@@ -463,7 +463,7 @@ function ConfigTile({ icon: Icon, label, value, isSet, warn }) {
 
 // ─── Tab: Setup Checklist ─────────────────────────────────────────────────────
 
-function SetupTab({ audi, audiId }) {
+function SetupTab({ audi, audiId, onReadyChange }) {
   const navigate         = useNavigate()
   const cfg              = audi?.config ?? {}
   const mode             = cfg.slotMode
@@ -575,6 +575,8 @@ function SetupTab({ audi, audiId }) {
   const required          = items.filter(i => !i.optional)
   const completedRequired = required.filter(i => i.done).length
   const allDone           = completedRequired === required.length
+
+  useEffect(() => { onReadyChange?.(allDone) }, [allDone]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Booking rule derived display values ───────────────────────────────────
   const bw          = cfg.bookingWindow ?? {}
@@ -751,7 +753,8 @@ export default function AudiDetail() {
   const navigate    = useNavigate()
   const queryClient = useQueryClient()
 
-  const [statusConfirm, setStatusConfirm] = useState(false)
+  const [statusConfirm,  setStatusConfirm]  = useState(false)
+  const [setupComplete,  setSetupComplete]  = useState(true)
 
   const { data: raw, isLoading } = useQuery({
     queryKey: ["audi", audiId],
@@ -795,7 +798,13 @@ export default function AudiDetail() {
           />
           <div className="flex items-center gap-2 shrink-0">
             <StatusBadge status={audi?.lifecycle?.status} />
-            <Button size="sm" variant={isActive ? "destructive" : "default"} onClick={() => setStatusConfirm(true)}>
+            <Button
+              size="sm"
+              variant={isActive ? "destructive" : "default"}
+              disabled={!isActive && !setupComplete}
+              title={!isActive && !setupComplete ? "Complete the Setup checklist before activating" : undefined}
+              onClick={() => setStatusConfirm(true)}
+            >
               {isActive ? "Deactivate" : "Activate"}
             </Button>
           </div>
@@ -846,7 +855,7 @@ export default function AudiDetail() {
 
         <div className="mt-6">
           <TabsContent value="setup" className="mt-0">
-            <SetupTab audi={audi} audiId={audiId} />
+            <SetupTab audi={audi} audiId={audiId} onReadyChange={setSetupComplete} />
           </TabsContent>
           <TabsContent value="info" className="mt-0">
             <InfoTab audi={audi} audiId={audiId} onSaved={onSaved} />

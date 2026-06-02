@@ -28,9 +28,9 @@ import StatusBadge from "@/components/common/StatusBadge"
 import EmptyState from "@/components/common/EmptyState"
 import FormInput from "@/components/forms/FormInput"
 import { useAuth } from "@/hooks/useAuth"
-import { listAudis } from "@/api/audi"
+import { listAdminAudis } from "@/api/audi"
 import { listSlots, createSlot, updateSlot, updateSlotStatus } from "@/api/slots"
-import { formatINR } from "@/utils/formatCurrency"
+
 
 // ─── Schema ────────────────────────────────────────────────────────────────────
 // Backend slot: { name, config: { startTime, endTime, pricing: { govt, nonGovt } } }
@@ -38,11 +38,9 @@ import { formatINR } from "@/utils/formatCurrency"
 
 const slotSchema = z
   .object({
-    name:           z.string().min(1, "Name is required"),
-    startTime:      z.string().min(1, "Start time is required"),
-    endTime:        z.string().min(1, "End time is required"),
-    pricingGovt:    z.coerce.number().min(0).optional().or(z.literal("")),
-    pricingNonGovt: z.coerce.number().min(0).optional().or(z.literal("")),
+    name:      z.string().min(1, "Name is required"),
+    startTime: z.string().min(1, "Start time is required"),
+    endTime:   z.string().min(1, "End time is required"),
   })
   .refine(d => d.endTime > d.startTime, {
     message: "End time must be after start time",
@@ -58,7 +56,7 @@ function SlotDialog({ open, onOpenChange, audiId, editingSlot, audi }) {
 
   const form = useForm({
     resolver: zodResolver(slotSchema),
-    defaultValues: { name: "", startTime: opStart, endTime: opEnd, pricingGovt: "", pricingNonGovt: "" },
+    defaultValues: { name: "", startTime: opStart, endTime: opEnd },
   })
 
   const startTime = form.watch("startTime")
@@ -76,12 +74,10 @@ function SlotDialog({ open, onOpenChange, audiId, editingSlot, audi }) {
   useEffect(() => {
     if (!open) return
     form.reset(editingSlot ? {
-      name:           editingSlot.name ?? "",
-      startTime:      editingSlot.config?.startTime ?? "",
-      endTime:        editingSlot.config?.endTime ?? "",
-      pricingGovt:    editingSlot.config?.pricing?.govt ?? "",
-      pricingNonGovt: editingSlot.config?.pricing?.nonGovt ?? "",
-    } : { name: "", startTime: opStart, endTime: opEnd, pricingGovt: "", pricingNonGovt: "" })
+      name:      editingSlot.name ?? "",
+      startTime: editingSlot.config?.startTime ?? "",
+      endTime:   editingSlot.config?.endTime ?? "",
+    } : { name: "", startTime: opStart, endTime: opEnd })
   }, [open, editingSlot, form])
 
   const mutation = useMutation({
@@ -89,10 +85,6 @@ function SlotDialog({ open, onOpenChange, audiId, editingSlot, audi }) {
       const config = {
         startTime: v.startTime,
         endTime:   v.endTime,
-        pricing: {
-          govt:    v.pricingGovt    !== "" ? Number(v.pricingGovt)    : undefined,
-          nonGovt: v.pricingNonGovt !== "" ? Number(v.pricingNonGovt) : undefined,
-        },
       }
       const id = editingSlot?.slotId ?? editingSlot?.id ?? editingSlot?._id
       return editingSlot
@@ -141,23 +133,10 @@ function SlotDialog({ open, onOpenChange, audiId, editingSlot, audi }) {
                 )} />
               </div>
               {liveDuration && (
-                <p className="text-xs text-muted-foreground">Duration: <strong>{liveDuration}</strong> — this will be matched against the Price Config hourly rates</p>
+                <p className="text-xs text-muted-foreground">
+                  Duration: <strong>{liveDuration}</strong> — set the rate for this duration in <strong>Price Config → Audi</strong>
+                </p>
               )}
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-sm font-medium">
-                Pricing
-                <span className="font-normal text-muted-foreground text-xs ml-1">
-                  (fallback — overridden by Price Config if one exists for this audi)
-                </span>
-              </p>
-              <div className="grid grid-cols-2 gap-4">
-                <FormInput control={form.control} name="pricingGovt"
-                  label="Govt Rate (₹)" type="number" placeholder="e.g. 5000" />
-                <FormInput control={form.control} name="pricingNonGovt"
-                  label="Non-Govt Rate (₹)" type="number" placeholder="e.g. 10000" />
-              </div>
             </div>
 
             <DialogFooter>
@@ -191,7 +170,7 @@ export default function SlotList() {
   // All audis for this theater
   const { data: audisRaw } = useQuery({
     queryKey: ["audis", theaterId],
-    queryFn: () => listAudis(theaterId).then(r => r.data.data),
+    queryFn: () => listAdminAudis(theaterId).then(r => r.data.data),
     enabled: !!theaterId,
   })
 
@@ -259,16 +238,7 @@ export default function SlotList() {
     {
       id: "pricing",
       header: "Pricing",
-      cell: ({ row }) => {
-        const p = row.original.config?.pricing
-        if (!p?.govt && !p?.nonGovt) return <span className="text-xs text-muted-foreground">Not set</span>
-        return (
-          <div className="text-xs space-y-0.5">
-            {p.govt    != null && <p>Govt: {formatINR(p.govt)}</p>}
-            {p.nonGovt != null && <p>Non-Govt: {formatINR(p.nonGovt)}</p>}
-          </div>
-        )
-      },
+      cell: () => <span className="text-xs text-muted-foreground">Via Price Config</span>,
     },
     {
       id: "status",

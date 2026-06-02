@@ -1,7 +1,10 @@
 import api from "./axiosInstance"
 
-export const listAudis = (theaterId) =>
-  api.get(`/theaters/${theaterId}/audis`)
+// export const listAdminAudis = (theaterId) =>
+//   api.get(`/theaters/${theaterId}/audis`)
+
+export const listAdminAudis = (theaterId) =>
+  api.get(`/admin/audis/theater/${theaterId}`)
 
 export const getAudi = (id) =>
   api.get(`/audis/${id}`)

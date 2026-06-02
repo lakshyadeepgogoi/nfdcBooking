@@ -18,7 +18,7 @@ import PageHeader from "@/components/common/PageHeader"
 import DataTable from "@/components/common/DataTable"
 import StatusBadge from "@/components/common/StatusBadge"
 import { useAuth } from "@/hooks/useAuth"
-import { listAudis, updateAudiStatus } from "@/api/audi"
+import { listAdminAudis, updateAudiStatus } from "@/api/audi"
 import { Building2 } from "lucide-react"
 
 export default function AudiList() {
@@ -32,7 +32,7 @@ export default function AudiList() {
 
   const { data: raw, isLoading } = useQuery({
     queryKey: ["audis", theaterId],
-    queryFn: () => listAudis(theaterId).then(r => r.data.data),
+    queryFn: () => listAdminAudis(theaterId).then(r => r.data.data),
     enabled: !!theaterId,
   })
 

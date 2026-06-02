@@ -17,7 +17,7 @@ import DataTable from "@/components/common/DataTable"
 import StatusBadge from "@/components/common/StatusBadge"
 import { useAuth } from "@/hooks/useAuth"
 import { listBookings } from "@/api/bookings"
-import { listAudis } from "@/api/audi"
+import { listAdminAudis } from "@/api/audi"
 import { parseList } from "@/utils/parseList"
 import { formatDate } from "@/utils/formatDate"
 import { formatINR } from "@/utils/formatCurrency"
@@ -56,7 +56,7 @@ export default function BookingList() {
 
   const { data: audis } = useQuery({
     queryKey: ["audis", theaterId],
-    queryFn: () => listAudis(theaterId).then(r => parseList(r.data.data)),
+    queryFn: () => listAdminAudis(theaterId).then(r => parseList(r.data.data)),
     enabled: !!theaterId,
   })
 

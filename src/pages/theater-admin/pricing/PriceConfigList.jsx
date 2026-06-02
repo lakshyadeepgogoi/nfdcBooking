@@ -39,7 +39,7 @@ import StatusBadge from "@/components/common/StatusBadge"
 import FormInput from "@/components/forms/FormInput"
 import { useAuth } from "@/hooks/useAuth"
 import { getTheaterProfile } from "@/api/theaters"
-import { listAudis } from "@/api/audi"
+import { listAdminAudis } from "@/api/audi"
 import { listSlots } from "@/api/slots"
 import { listServicesGrouped } from "@/api/services"
 import {
@@ -229,25 +229,6 @@ function buildConfig(values) {
 
 // ─── Config Summary (card display) ─────────────────────────────────────────────
 
-function SummaryTable({ head, rows }) {
-  return (
-    <div className="rounded-md border overflow-hidden text-sm">
-      <div className="grid bg-blue-50 border-b px-3 py-1.5" style={{ gridTemplateColumns: `repeat(${head.length}, 1fr)` }}>
-        {head.map(h => (
-          <span key={h} className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{h}</span>
-        ))}
-      </div>
-      {rows.map((row, i) => (
-        <div key={i} className={`grid px-3 py-2 ${i % 2 === 1 ? "bg-muted/20" : ""}`} style={{ gridTemplateColumns: `repeat(${head.length}, 1fr)` }}>
-          {row.map((cell, j) => (
-            <span key={j} className={`tabular-nums truncate ${j === 0 ? "font-medium" : "text-muted-foreground"}`}>{cell}</span>
-          ))}
-        </div>
-      ))}
-    </div>
-  )
-}
-
 function ConfigSummary({ config }) {
   const { pricingType } = config
 
@@ -257,17 +238,18 @@ function ConfigSummary({ config }) {
     if (!active.length && !inactive.length)
       return <p className="text-xs text-muted-foreground">No rates configured</p>
     return (
-      <div className="space-y-2">
-        <SummaryTable
-          head={["Duration", "Govt", "Non-Govt"]}
-          rows={active.map(r => [
-            `${r.hours}h`,
-            r.price?.govt != null ? formatINR(r.price.govt) : "—",
-            r.price?.nonGovt != null ? formatINR(r.price.nonGovt) : "—",
-          ])}
-        />
+      <div className="space-y-1.5">
+        {active.map((r, i) => (
+          <div key={i} className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">{r.hours}h</span>
+            <div className="flex gap-3">
+              {r.price?.govt != null && <span>Govt <span className="font-medium tabular-nums">{formatINR(r.price.govt)}</span></span>}
+              {r.price?.nonGovt != null && <span>Non-Govt <span className="font-medium tabular-nums">{formatINR(r.price.nonGovt)}</span></span>}
+            </div>
+          </div>
+        ))}
         {inactive.length > 0 && (
-          <p className="text-xs text-muted-foreground">{inactive.length} inactive rate{inactive.length > 1 ? "s" : ""} hidden</p>
+          <p className="text-[11px] text-muted-foreground/60">{inactive.length} inactive rate{inactive.length > 1 ? "s" : ""}</p>
         )}
       </div>
     )
@@ -277,15 +259,17 @@ function ConfigSummary({ config }) {
     const shifts = config.shifts ?? []
     if (!shifts.length) return <p className="text-xs text-muted-foreground">No shifts configured</p>
     return (
-      <SummaryTable
-        head={["Shift", "Time", "Govt", "Non-Govt"]}
-        rows={shifts.map(s => [
-          s.name,
-          `${s.startTime}–${s.endTime}`,
-          s.price?.govt != null ? formatINR(s.price.govt) : "—",
-          s.price?.nonGovt != null ? formatINR(s.price.nonGovt) : "—",
-        ])}
-      />
+      <div className="space-y-1.5">
+        {shifts.map((s, i) => (
+          <div key={i} className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground truncate">{s.name} <span className="opacity-60">{s.startTime}–{s.endTime}</span></span>
+            <div className="flex gap-3 shrink-0">
+              {s.price?.govt != null && <span className="tabular-nums">{formatINR(s.price.govt)}</span>}
+              {s.price?.nonGovt != null && <span className="tabular-nums text-muted-foreground">{formatINR(s.price.nonGovt)}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
     )
   }
 
@@ -293,19 +277,9 @@ function ConfigSummary({ config }) {
     const p = config.flatRate?.price
     if (!p?.govt && !p?.nonGovt) return <p className="text-xs text-muted-foreground">No pricing set</p>
     return (
-      <div className="grid grid-cols-2 gap-2">
-        {p?.govt != null && (
-          <div className="rounded-md bg-blue-50 border border-blue-100 px-3 py-2">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Govt</p>
-            <p className="text-base font-semibold tabular-nums mt-0.5">{formatINR(p.govt)}</p>
-          </div>
-        )}
-        {p?.nonGovt != null && (
-          <div className="rounded-md bg-blue-50 border border-blue-100 px-3 py-2">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Non-Govt</p>
-            <p className="text-base font-semibold tabular-nums mt-0.5">{formatINR(p.nonGovt)}</p>
-          </div>
-        )}
+      <div className="flex gap-4 text-xs">
+        {p?.govt != null && <span>Govt <span className="font-medium tabular-nums">{formatINR(p.govt)}</span></span>}
+        {p?.nonGovt != null && <span>Non-Govt <span className="font-medium tabular-nums">{formatINR(p.nonGovt)}</span></span>}
       </div>
     )
   }
@@ -314,14 +288,18 @@ function ConfigSummary({ config }) {
     if (!config.chargeSlabs?.length)
       return <p className="text-xs text-muted-foreground">No charge slabs configured</p>
     return (
-      <SummaryTable
-        head={["Window", "Charge", "Min"]}
-        rows={config.chargeSlabs.map(s => [
-          `${s.label ? s.label + ": " : ""}Day ${s.daysFrom}–${s.daysTo ?? "∞"}`,
-          `${s.percentage}%`,
-          s.minimumCharge ? formatINR(s.minimumCharge) : "—",
-        ])}
-      />
+      <div className="space-y-1.5">
+        {config.chargeSlabs.map((s, i) => (
+          <div key={i} className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">
+              {s.label ? `${s.label}: ` : ""}Day {s.daysFrom}–{s.daysTo ?? "∞"}
+            </span>
+            <span className="font-medium tabular-nums">
+              {s.percentage}%{s.minimumCharge ? ` (min ${formatINR(s.minimumCharge)})` : ""}
+            </span>
+          </div>
+        ))}
+      </div>
     )
   }
 
@@ -1038,40 +1016,36 @@ function PriceConfigCard({ pc, entity, onEdit, onToggleStatus }) {
   const isActive     = pc?.lifecycle?.status === "active"
 
   return (
-    <Card className={`border-l-4 hover:shadow-md transition-shadow duration-200 ${
-      !isConfigured ? "border-l-slate-200" :
-      isActive      ? "border-l-blue-500"  : "border-l-slate-300 opacity-60"
-    }`}>
-      <CardContent className="p-5 space-y-4">
+    <Card className={!isActive && isConfigured ? "opacity-60" : ""}>
+      <CardContent className="p-4 space-y-3">
 
         {/* Header */}
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <p className="font-semibold text-sm leading-snug truncate">{entity.name}</p>
-            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+            <p className="font-medium text-sm truncate">{entity.name}</p>
+            <div className="flex items-center gap-1.5 mt-0.5">
               {isConfigured ? (
                 <>
-                  <Badge variant="secondary" className="text-xs">
+                  <span className="text-xs text-muted-foreground">
                     {PRICING_TYPE_LABELS[pc.config?.pricingType] ?? pc.config?.pricingType}
-                  </Badge>
+                  </span>
+                  <span className="text-muted-foreground/40">·</span>
                   <StatusBadge status={pc.lifecycle?.status} />
                 </>
               ) : (
-                <Badge variant="outline" className="text-xs text-muted-foreground border-dashed">
-                  Not configured
-                </Badge>
+                <span className="text-xs text-muted-foreground">Not configured</span>
               )}
             </div>
           </div>
           <div className="flex items-center gap-0.5 shrink-0">
-            <Button variant="ghost" size="icon" className="h-8 w-8" title="Edit" onClick={onEdit}>
+            <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={onEdit}>
               <Pencil className="h-3.5 w-3.5" />
             </Button>
             {isConfigured && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <MoreHorizontal className="h-4 w-4" />
+                  <Button variant="ghost" size="icon" className="h-7 w-7">
+                    <MoreHorizontal className="h-3.5 w-3.5" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -1088,21 +1062,13 @@ function PriceConfigCard({ pc, entity, onEdit, onToggleStatus }) {
           </div>
         </div>
 
-        {isConfigured ? (
+        {isConfigured && (
           <>
             <Separator />
             <ConfigSummary config={pc.config} />
-            <p className="text-[10px] text-muted-foreground/50 font-mono truncate pt-1">
-              {pc.priceConfigId}
-            </p>
           </>
-        ) : (
-          <div className="flex flex-col items-center gap-1.5 py-5 text-center">
-            <Settings2 className="h-7 w-7 text-muted-foreground/25" />
-            <p className="text-xs text-muted-foreground">No pricing configured</p>
-            <p className="text-[11px] text-muted-foreground/60">Click edit to set up</p>
-          </div>
         )}
+
       </CardContent>
     </Card>
   )
@@ -1191,7 +1157,7 @@ export default function PriceConfigList() {
   // ── Audis — always fresh so newly created audis appear in entity selectors ──
   const { data: audisRaw } = useQuery({
     queryKey: ["audis", theaterId],
-    queryFn: () => listAudis(theaterId).then(r => r.data.data),
+    queryFn: () => listAdminAudis(theaterId).then(r => r.data.data),
     enabled: !!theaterId,
     staleTime: 0,
     refetchOnMount: "always",

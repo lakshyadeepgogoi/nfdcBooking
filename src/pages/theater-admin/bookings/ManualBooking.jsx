@@ -25,7 +25,7 @@ import PageHeader from "@/components/common/PageHeader"
 import FormSelect from "@/components/forms/FormSelect"
 import FormTextarea from "@/components/forms/FormTextarea"
 import { useAuth } from "@/hooks/useAuth"
-import { listAudis } from "@/api/audi"
+import { listAdminAudis } from "@/api/audi"
 import { listSlots } from "@/api/slots"
 import { listServicesGrouped } from "@/api/services"
 import { manualBookingOffline, manualBookingWaived } from "@/api/bookings"
@@ -306,27 +306,60 @@ function AvailabilityCalendar({ control, audiId }) {
                       <div className="space-y-1">
                         {selectedDayData.slots.map(slot => {
                           const s = SLOT_STATUS[slot.status] ?? SLOT_STATUS.available
+                          const reason = {
+                            booked:    "Customer booking exists",
+                            blocked:   "Admin blocked this slot",
+                            locked:    "Locked — cannot book",
+                            available: "Available to book",
+                          }[slot.status] ?? ""
                           return (
-                            <div key={slot.slotId} className={cn("flex items-center justify-between px-2.5 py-1.5 rounded border text-xs", s.bg)}>
-                              <span className={cn("font-medium", s.color)}>{slot.name}</span>
-                              <div className="flex items-center gap-2 shrink-0">
-                                <span className="text-muted-foreground text-[11px]">{slot.startTime}–{slot.endTime}</span>
-                                <span className={cn("font-bold", s.color)}>{s.icon}</span>
+                            <div key={slot.slotId} className={cn("flex items-start justify-between px-2.5 py-2 rounded border text-xs gap-2", s.bg)}>
+                              <div className="min-w-0">
+                                <p className={cn("font-medium", s.color)}>{slot.name}</p>
+                                <p className="text-muted-foreground text-[11px] tabular-nums">{slot.startTime} – {slot.endTime}</p>
+                                {reason && slot.status !== "available" && (
+                                  <p className="text-[11px] text-muted-foreground/70 mt-0.5">{reason}</p>
+                                )}
                               </div>
+                              <span className={cn("font-bold text-sm shrink-0", s.color)}>{s.icon}</span>
                             </div>
                           )
                         })}
                       </div>
                     )}
 
-                    {/* Flexible mode: booked windows */}
-                    {slotMode === "flexible" && selectedDayData?.bookedWindows?.length > 0 && (
-                      <div className="space-y-1">
-                        <p className="text-[11px] text-muted-foreground font-medium">Booked windows:</p>
-                        {selectedDayData.bookedWindows.map((w, i) => (
-                          <div key={i} className="flex items-center gap-2 px-2.5 py-1.5 rounded border bg-red-50 border-red-200 text-xs">
-                            <span className="text-red-700 font-medium">{w.startTime} – {w.endTime}</span>
-                            <Badge variant="outline" className="text-[10px] capitalize ml-auto">{w.status}</Badge>
+                    {/* Flexible mode: booked + blocked windows */}
+                    {slotMode === "flexible" && (
+                      (selectedDayData?.bookedWindows?.length > 0 || selectedDayData?.blockedWindows?.length > 0)
+                    ) && (
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] font-medium text-muted-foreground">Unavailable windows</p>
+
+                        {/* Customer bookings */}
+                        {selectedDayData.bookedWindows?.map((w, i) => (
+                          <div key={`bk-${i}`} className="flex items-center justify-between px-2.5 py-2 rounded border bg-red-50 border-red-200 text-xs gap-3">
+                            <div>
+                              <p className="font-semibold tabular-nums text-red-700">{w.startTime} – {w.endTime}</p>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">
+                                Customer booking
+                                {w.status && ` · ${w.status}`}
+                              </p>
+                            </div>
+                            <span className="text-[11px] font-medium text-red-600 shrink-0">Booked</span>
+                          </div>
+                        ))}
+
+                        {/* Admin blocks */}
+                        {selectedDayData.blockedWindows?.map((w, i) => (
+                          <div key={`bl-${i}`} className="flex items-center justify-between px-2.5 py-2 rounded border bg-orange-50 border-orange-200 text-xs gap-3">
+                            <div>
+                              <p className="font-semibold tabular-nums text-orange-700">{w.startTime} – {w.endTime}</p>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">
+                                Admin block
+                                {w.reason ? ` · ${w.reason}` : ""}
+                              </p>
+                            </div>
+                            <span className="text-[11px] font-medium text-orange-600 shrink-0">Blocked</span>
                           </div>
                         ))}
                       </div>
@@ -1035,7 +1068,7 @@ export default function ManualBooking() {
 
   const { data: audis } = useQuery({
     queryKey: ["audis", theaterId],
-    queryFn:  () => listAudis(theaterId).then(r => parseList(r.data.data)),
+    queryFn:  () => listAdminAudis(theaterId).then(r => parseList(r.data.data)),
     enabled:  !!theaterId,
   })
 
