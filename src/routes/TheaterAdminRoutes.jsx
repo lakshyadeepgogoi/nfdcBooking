@@ -4,7 +4,7 @@ import TheaterAdminLayout from "@/layouts/TheaterAdminLayout"
 import NotFound from "@/pages/NotFound"
 import LoadingSpinner from "@/components/common/LoadingSpinner"
 import { useAuth } from "@/hooks/useAuth"
-import { getTheaterProfile } from "@/api/theaters"
+import { getAdminTheaterProfile } from "@/api/theaters"
 import Dashboard from "@/pages/theater-admin/Dashboard"
 import TheaterSettings from "@/pages/theater-admin/TheaterSettings"
 import AudiList from "@/pages/theater-admin/audi/AudiList"
@@ -26,7 +26,7 @@ function RescheduleGuard() {
   const { user } = useAuth()
   const { data: theaterRaw, isLoading } = useQuery({
     queryKey: ["theater-profile", user?.theaterId],
-    queryFn:  () => getTheaterProfile(user?.theaterId).then(r => r.data.data),
+    queryFn:  () => getAdminTheaterProfile(user?.theaterId).then(r => r.data.data),
     enabled:  !!user?.theaterId,
     staleTime: 5 * 60_000,
   })

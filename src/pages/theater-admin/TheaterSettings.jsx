@@ -33,7 +33,7 @@ import EmptyState from "@/components/common/EmptyState"
 import LoadingSpinner from "@/components/common/LoadingSpinner"
 import { useAuth } from "@/hooks/useAuth"
 import {
-  getTheaterProfile, updateTheaterInfo, uploadTheaterImages,
+  getAdminTheaterProfile, updateTheaterInfo, uploadTheaterImages,
   updateTnCDraft, publishTnC,
 } from "@/api/theaters"
 import { toAPIDate } from "@/utils/formatDate"
@@ -645,7 +645,7 @@ export default function TheaterSettings() {
 
   const { data: theaterRaw, isLoading } = useQuery({
     queryKey: ["theater", theaterId],
-    queryFn:  () => getTheaterProfile(theaterId).then((r) => r.data.data),
+    queryFn:  () => getAdminTheaterProfile(theaterId).then((r) => r.data.data),
     enabled:  !!theaterId,
   })
 

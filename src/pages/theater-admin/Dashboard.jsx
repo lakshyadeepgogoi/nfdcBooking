@@ -10,7 +10,7 @@ import PageHeader from "@/components/common/PageHeader"
 import StatusBadge from "@/components/common/StatusBadge"
 import EmptyState from "@/components/common/EmptyState"
 import { getAdminDashboard, getRevenueAnalytics } from "@/api/analytics"
-import { getTheaterProfile } from "@/api/theaters"
+import { getAdminTheaterProfile } from "@/api/theaters"
 import { useAuth } from "@/hooks/useAuth"
 import { formatINR } from "@/utils/formatCurrency"
 import { toAPIDate, subDays } from "@/utils/formatDate"
@@ -43,7 +43,7 @@ export default function Dashboard() {
 
   const { data: theaterRaw } = useQuery({
     queryKey: ["theater", theaterId],
-    queryFn: () => getTheaterProfile(theaterId).then(r => r.data.data),
+    queryFn: () => getAdminTheaterProfile(theaterId).then(r => r.data.data),
     enabled: !!theaterId,
   })
   const theaterName = theaterRaw?.theater?.name ?? theaterRaw?.name ?? ""

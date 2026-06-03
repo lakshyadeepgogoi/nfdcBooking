@@ -30,7 +30,7 @@ import LoadingSpinner from "@/components/common/LoadingSpinner"
 import FormInput from "@/components/forms/FormInput"
 import FormTextarea from "@/components/forms/FormTextarea"
 import { getAdminAudi, updateAudi, updateAudiStatus, uploadAudiImages } from "@/api/audi"
-import { getTheaterProfile } from "@/api/theaters"
+import { getAdminTheaterProfile } from "@/api/theaters"
 import { listSlots } from "@/api/slots"
 import { listPriceConfigs } from "@/api/priceConfig"
 import { fmt12 } from "@/utils/formatDate"
@@ -474,7 +474,7 @@ function SetupTab({ audi, audiId, onReadyChange }) {
   // ── Theater config ────────────────────────────────────────────────────────
   const { data: theaterRaw } = useQuery({
     queryKey: ["theater-profile", theaterId],
-    queryFn:  () => getTheaterProfile(theaterId).then(r => r.data.data),
+    queryFn:  () => getAdminTheaterProfile(theaterId).then(r => r.data.data),
     enabled:  !!theaterId,
     staleTime: 60_000,
   })

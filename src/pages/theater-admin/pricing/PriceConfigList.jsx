@@ -38,7 +38,7 @@ import EmptyState from "@/components/common/EmptyState"
 import StatusBadge from "@/components/common/StatusBadge"
 import FormInput from "@/components/forms/FormInput"
 import { useAuth } from "@/hooks/useAuth"
-import { getTheaterProfile } from "@/api/theaters"
+import { getAdminTheaterProfile } from "@/api/theaters"
 import { listAdminAudis } from "@/api/audi"
 import { listSlots } from "@/api/slots"
 import { listServicesGrouped } from "@/api/services"
@@ -1149,7 +1149,7 @@ export default function PriceConfigList() {
   // ── Theater config (allowUserReschedule gate) ──
   const { data: theaterRaw } = useQuery({
     queryKey: ["theater-profile", theaterId],
-    queryFn:  () => getTheaterProfile(theaterId).then(r => r.data.data),
+    queryFn:  () => getAdminTheaterProfile(theaterId).then(r => r.data.data),
     enabled:  !!theaterId,
     staleTime: 60_000,
   })

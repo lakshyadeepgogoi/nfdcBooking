@@ -14,7 +14,7 @@ import LoadingSpinner from "@/components/common/LoadingSpinner"
 import ErrorBoundary from "@/components/common/ErrorBoundary"
 import HelpGuide from "@/components/common/HelpGuide"
 import { useAuth } from "@/hooks/useAuth"
-import { getTheaterProfile } from "@/api/theaters"
+import { getAdminTheaterProfile } from "@/api/theaters"
 import { NAV_ITEMS } from "@/config/navConfig"
 import { ROLES } from "@/auth/permissions"
 
@@ -31,7 +31,7 @@ export default function AppLayout({ requiredRole }) {
 
   const { data: theaterRaw } = useQuery({
     queryKey: ["theater-profile", user?.theaterId],
-    queryFn:  () => getTheaterProfile(user?.theaterId).then(r => r.data.data),
+    queryFn:  () => getAdminTheaterProfile(user?.theaterId).then(r => r.data.data),
     enabled:  isTheaterAdmin && !!user?.theaterId,
     staleTime: 5 * 60_000,
   })

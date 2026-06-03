@@ -1,7 +1,10 @@
 import api from "./axiosInstance"
 
-export const getTheaterProfile = (id) =>
-  api.get(`/theaters/${id}`)
+
+
+// Admin endpoint — no status filter, returns full theater including config
+export const getAdminTheaterProfile = (id) =>
+  api.get(`/admin/theaters/${id}`)
 
 // Theater-admin general info update (name + details)
 export const updateTheaterInfo = (id, data) =>

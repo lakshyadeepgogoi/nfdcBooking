@@ -16,7 +16,7 @@ export const listAllTheaters = (params) =>
   api.get("/super/theaters", { params })
 
 export const getTheaterDetail = (id) =>
-  api.get(`/theaters/${id}`)
+  api.get(`/super/theaters/${id}`)
 
 export const createTheater = (data) =>
   api.post("/super/theaters", data)
