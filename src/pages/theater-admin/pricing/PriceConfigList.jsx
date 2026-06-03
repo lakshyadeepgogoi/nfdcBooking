@@ -46,6 +46,7 @@ import {
   listPriceConfigs, createPriceConfig, updatePriceConfig, updatePriceConfigStatus,
 } from "@/api/priceConfig"
 import { formatINR } from "@/utils/formatCurrency"
+import { fmt12 } from "@/utils/formatDate"
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -262,7 +263,7 @@ function ConfigSummary({ config }) {
       <div className="space-y-1.5">
         {shifts.map((s, i) => (
           <div key={i} className="flex items-center justify-between text-xs">
-            <span className="text-muted-foreground truncate">{s.name} <span className="opacity-60">{s.startTime}–{s.endTime}</span></span>
+            <span className="text-muted-foreground truncate">{s.name} <span className="opacity-60">{fmt12(s.startTime)}–{fmt12(s.endTime)}</span></span>
             <div className="flex gap-3 shrink-0">
               {s.price?.govt != null && <span className="tabular-nums">{formatINR(s.price.govt)}</span>}
               {s.price?.nonGovt != null && <span className="tabular-nums text-muted-foreground">{formatINR(s.price.nonGovt)}</span>}

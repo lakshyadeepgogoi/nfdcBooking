@@ -32,7 +32,7 @@ import { manualBookingOffline, manualBookingWaived } from "@/api/bookings"
 import { lookupUser } from "@/api/users"
 import { getAudiCalendar, previewFee } from "@/api/availability"
 import { parseList } from "@/utils/parseList"
-import { toAPIDate } from "@/utils/formatDate"
+import { toAPIDate, fmt12 } from "@/utils/formatDate"
 import { formatINR } from "@/utils/formatCurrency"
 import { cn } from "@/lib/utils"
 
@@ -316,7 +316,7 @@ function AvailabilityCalendar({ control, audiId }) {
                             <div key={slot.slotId} className={cn("flex items-start justify-between px-2.5 py-2 rounded border text-xs gap-2", s.bg)}>
                               <div className="min-w-0">
                                 <p className={cn("font-medium", s.color)}>{slot.name}</p>
-                                <p className="text-muted-foreground text-[11px] tabular-nums">{slot.startTime} – {slot.endTime}</p>
+                                <p className="text-muted-foreground text-[11px] tabular-nums">{fmt12(slot.startTime)} – {fmt12(slot.endTime)}</p>
                                 {reason && slot.status !== "available" && (
                                   <p className="text-[11px] text-muted-foreground/70 mt-0.5">{reason}</p>
                                 )}
@@ -339,7 +339,7 @@ function AvailabilityCalendar({ control, audiId }) {
                         {selectedDayData.bookedWindows?.map((w, i) => (
                           <div key={`bk-${i}`} className="flex items-center justify-between px-2.5 py-2 rounded border bg-red-50 border-red-200 text-xs gap-3">
                             <div>
-                              <p className="font-semibold tabular-nums text-red-700">{w.startTime} – {w.endTime}</p>
+                              <p className="font-semibold tabular-nums text-red-700">{fmt12(w.startTime)} – {fmt12(w.endTime)}</p>
                               <p className="text-[11px] text-muted-foreground mt-0.5">
                                 Customer booking
                                 {w.status && ` · ${w.status}`}
@@ -353,7 +353,7 @@ function AvailabilityCalendar({ control, audiId }) {
                         {selectedDayData.blockedWindows?.map((w, i) => (
                           <div key={`bl-${i}`} className="flex items-center justify-between px-2.5 py-2 rounded border bg-orange-50 border-orange-200 text-xs gap-3">
                             <div>
-                              <p className="font-semibold tabular-nums text-orange-700">{w.startTime} – {w.endTime}</p>
+                              <p className="font-semibold tabular-nums text-orange-700">{fmt12(w.startTime)} – {fmt12(w.endTime)}</p>
                               <p className="text-[11px] text-muted-foreground mt-0.5">
                                 Admin block
                                 {w.reason ? ` · ${w.reason}` : ""}
@@ -583,7 +583,7 @@ function TimeFields({ control, setValue, audi }) {
                         <div className="flex-1 min-w-0">
                           <span className="font-medium text-sm">{s.name}</span>
                           <span className="text-muted-foreground text-xs ml-2">
-                            {s.config?.startTime}–{s.config?.endTime}
+                            {fmt12(s.config?.startTime)}–{fmt12(s.config?.endTime)}
                             {hours ? ` (${hours}h)` : ""}
                           </span>
                           {notAdjacent && gapToBlock > 0 && (
@@ -652,7 +652,7 @@ function TimeFields({ control, setValue, audi }) {
             <FormItem>
               <FormLabel>
                 Start Time
-                {opStart && <span className="text-muted-foreground font-normal ml-1">(from {opStart})</span>}
+                {opStart && <span className="text-muted-foreground font-normal ml-1">(from {fmt12(opStart)})</span>}
               </FormLabel>
               <FormControl>
                 <Input
@@ -672,7 +672,7 @@ function TimeFields({ control, setValue, audi }) {
                   Free:{" "}
                   {availableWindows.map((w, i) => (
                     <span key={i} className="font-medium text-foreground">
-                      {i > 0 && " · "}{fromMins(w.start)}–{fromMins(w.end)}
+                      {i > 0 && " · "}{fmt12(fromMins(w.start))}–{fmt12(fromMins(w.end))}
                     </span>
                   ))}
                 </p>
@@ -693,7 +693,7 @@ function TimeFields({ control, setValue, audi }) {
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
               <Clock className="h-3 w-3" /> Select duration
-              {opEnd && <span>(closes {opEnd})</span>}
+              {opEnd && <span>(closes {fmt12(opEnd)})</span>}
             </p>
             <div className="flex flex-wrap gap-2">
               {durations.map(d => {
@@ -714,7 +714,7 @@ function TimeFields({ control, setValue, audi }) {
                       const base = startTime || opStart
                       if (!base) { toast.error("No start time available"); return }
                       const computedEnd = toMins(base) + d * 60
-                      if (computedEnd > opEndMins) { toast.error(`${d}h exceeds closing time (${opEnd})`); return }
+                      if (computedEnd > opEndMins) { toast.error(`${d}h exceeds closing time (${fmt12(opEnd)})`); return }
                       if (dateStr && !isSlotFree(base, d)) { toast.error("This duration conflicts with an existing booking"); return }
                       if (!startTime && opStart) setValue("startTime", opStart, { shouldValidate: true })
                       setValue("endTime", fromMins(computedEnd), { shouldValidate: true })
@@ -736,7 +736,7 @@ function TimeFields({ control, setValue, audi }) {
             {activeDuration && endTime && (
               <p className="text-xs text-muted-foreground flex items-center gap-1">
                 <CheckCircle2 className="h-3 w-3 text-green-500" />
-                {activeDuration}h session · ends at <span className="font-medium text-foreground">{endTime}</span>
+                {activeDuration}h session · ends at <span className="font-medium text-foreground">{fmt12(endTime)}</span>
               </p>
             )}
             {!startTime && !opStart && (
@@ -751,7 +751,7 @@ function TimeFields({ control, setValue, audi }) {
             <FormItem>
               <FormLabel>
                 Start Time
-                {opStart && <span className="text-muted-foreground font-normal ml-1">(from {opStart})</span>}
+                {opStart && <span className="text-muted-foreground font-normal ml-1">(from {fmt12(opStart)})</span>}
               </FormLabel>
               <FormControl>
                 <Input type="time" min={opStart || undefined} max={opEnd || undefined} {...field} />
@@ -763,7 +763,7 @@ function TimeFields({ control, setValue, audi }) {
             <FormItem>
               <FormLabel>
                 End Time
-                {opEnd && <span className="text-muted-foreground font-normal ml-1">(until {opEnd})</span>}
+                {opEnd && <span className="text-muted-foreground font-normal ml-1">(until {fmt12(opEnd)})</span>}
               </FormLabel>
               <FormControl>
                 <Input type="time" min={startTime || opStart || undefined} max={opEnd || undefined} {...field} />

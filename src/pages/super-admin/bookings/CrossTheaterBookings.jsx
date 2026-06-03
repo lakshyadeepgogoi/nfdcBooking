@@ -15,7 +15,7 @@ import PageHeader from "@/components/common/PageHeader"
 import DataTable from "@/components/common/DataTable"
 import StatusBadge from "@/components/common/StatusBadge"
 import { getCrossTheaterBookings, listAllTheaters } from "@/api/superAdmin"
-import { formatDate } from "@/utils/formatDate"
+import { formatDate, fmt12 } from "@/utils/formatDate"
 import { formatINR } from "@/utils/formatCurrency"
 import { BOOKING_STATUS } from "@/utils/constants"
 import { cn } from "@/lib/utils"
@@ -162,7 +162,7 @@ export default function CrossTheaterBookings() {
         return (
           <div>
             <p className="text-sm">{date}</p>
-            {start && end && <p className="text-xs text-muted-foreground">{start}–{end}</p>}
+            {start && end && <p className="text-xs text-muted-foreground">{fmt12(start)} – {fmt12(end)}</p>}
           </div>
         )
       },

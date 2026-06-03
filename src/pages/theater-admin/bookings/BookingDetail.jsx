@@ -32,7 +32,7 @@ import {
   getBooking, updateBookingStatus, markDocsSubmitted, markDocsVerified,
   addOvertimeCharge, extendDeadline, refundDeposit,
 } from "@/api/bookings"
-import { formatDate, formatDateTime } from "@/utils/formatDate"
+import { formatDate, formatDateTime, fmt12 } from "@/utils/formatDate"
 import { formatINR } from "@/utils/formatCurrency"
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -265,8 +265,8 @@ export default function BookingDetail() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 rounded-lg border overflow-hidden">
                 {[
                   { label: "Date",       value: formatDate(bd.date) ?? "—",                       icon: CalendarDays },
-                  { label: "Start",      value: bd.startTime ?? "—",                              icon: Clock        },
-                  { label: "End",        value: bd.endTime   ?? "—",                              icon: Clock        },
+                  { label: "Start",      value: fmt12(bd.startTime),                              icon: Clock        },
+                  { label: "End",        value: fmt12(bd.endTime),                                icon: Clock        },
                   { label: "Duration",   value: dur ?? "—",                                       icon: Timer        },
                 ].map(({ label, value, icon: Icon }, i) => (
                   <div key={label} className={`p-4 space-y-1 ${i < 3 ? "border-r last:border-r-0" : ""} border-b sm:border-b-0`}>

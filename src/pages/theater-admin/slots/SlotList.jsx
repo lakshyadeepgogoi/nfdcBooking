@@ -33,6 +33,7 @@ import StatusBadge from "@/components/common/StatusBadge"
 import EmptyState from "@/components/common/EmptyState"
 import FormInput from "@/components/forms/FormInput"
 import { useAuth } from "@/hooks/useAuth"
+import { fmt12 } from "@/utils/formatDate"
 import { listAdminAudis } from "@/api/audi"
 import { listSlots, createSlot, updateSlot, updateSlotStatus } from "@/api/slots"
 
@@ -168,7 +169,7 @@ function SlotDialog({ open, onOpenChange, audiId, editingSlot, audi, existingSlo
       return
     }
     if (outsideHours) {
-      toast.error(`Slot must be within operational hours (${opStart}–${opEnd})`)
+      toast.error(`Slot must be within operational hours (${fmt12(opStart)}–${fmt12(opEnd)})`)
       return
     }
     mutation.mutate(v)
@@ -205,7 +206,7 @@ function SlotDialog({ open, onOpenChange, audiId, editingSlot, audi, existingSlo
                             : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
                         )}
                       >
-                        {fromMins(g.start)} – {fromMins(g.end)}
+                        {fmt12(fromMins(g.start))} – {fmt12(fromMins(g.end))}
                         <span className="ml-1 opacity-70">({calcDuration(fromMins(g.start), fromMins(g.end))})</span>
                       </button>
                     )
@@ -217,7 +218,7 @@ function SlotDialog({ open, onOpenChange, audiId, editingSlot, audi, existingSlo
             {freeGaps.length === 0 && opStart && opEnd && (
               <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                No free windows remaining within {opStart}–{opEnd}
+                No free windows remaining within {fmt12(opStart)}–{fmt12(opEnd)}
               </div>
             )}
 
@@ -227,7 +228,7 @@ function SlotDialog({ open, onOpenChange, audiId, editingSlot, audi, existingSlo
                 <FormItem>
                   <FormLabel className="text-sm">
                     Start Time
-                    {opStart && <span className="font-normal text-muted-foreground text-xs ml-1">(from {opStart})</span>}
+                    {opStart && <span className="font-normal text-muted-foreground text-xs ml-1">(from {fmt12(opStart)})</span>}
                   </FormLabel>
                   <FormControl>
                     <input type="time"
@@ -244,7 +245,7 @@ function SlotDialog({ open, onOpenChange, audiId, editingSlot, audi, existingSlo
                 <FormItem>
                   <FormLabel className="text-sm">
                     End Time
-                    {opEnd && <span className="font-normal text-muted-foreground text-xs ml-1">(until {opEnd})</span>}
+                    {opEnd && <span className="font-normal text-muted-foreground text-xs ml-1">(until {fmt12(opEnd)})</span>}
                   </FormLabel>
                   <FormControl>
                     <input type="time"
@@ -269,7 +270,7 @@ function SlotDialog({ open, onOpenChange, audiId, editingSlot, audi, existingSlo
             {outsideHours && overlaps.length === 0 && (
               <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                Outside operational hours ({opStart}–{opEnd})
+                Outside operational hours ({fmt12(opStart)}–{fmt12(opEnd)})
               </div>
             )}
             {duration && overlaps.length === 0 && !outsideHours && (
@@ -357,7 +358,7 @@ export default function SlotList() {
         const s = row.original.config?.startTime
         const e = row.original.config?.endTime
         return s && e ? (
-          <span className="tabular-nums text-sm">{s} – {e}</span>
+          <span className="tabular-nums text-sm">{fmt12(s)} – {fmt12(e)}</span>
         ) : "—"
       },
     },
@@ -447,7 +448,7 @@ export default function SlotList() {
         {selectedAudiId && opStart && opEnd && (
           <span className="text-xs text-muted-foreground flex items-center gap-1.5">
             <Clock className="h-3.5 w-3.5" />
-            Operational hours: <strong className="text-foreground">{opStart} – {opEnd}</strong>
+            Operational hours: <strong className="text-foreground">{fmt12(opStart)} – {fmt12(opEnd)}</strong>
           </span>
         )}
       </div>

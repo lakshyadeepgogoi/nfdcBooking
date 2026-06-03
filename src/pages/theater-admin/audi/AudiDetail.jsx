@@ -33,6 +33,7 @@ import { getAdminAudi, updateAudi, updateAudiStatus, uploadAudiImages } from "@/
 import { getTheaterProfile } from "@/api/theaters"
 import { listSlots } from "@/api/slots"
 import { listPriceConfigs } from "@/api/priceConfig"
+import { fmt12 } from "@/utils/formatDate"
 import { cn } from "@/lib/utils"
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -822,7 +823,7 @@ export default function AudiDetail() {
             <StatChip
               icon={Clock}
               label="Hours"
-              value={`${audi.config.operationalHours?.start ?? "—"} – ${audi.config.operationalHours?.end ?? "—"}`}
+              value={`${fmt12(audi.config.operationalHours?.start)} – ${fmt12(audi.config.operationalHours?.end)}`}
             />
           )}
           {audi?.config?.paymentDeadlineHours && (

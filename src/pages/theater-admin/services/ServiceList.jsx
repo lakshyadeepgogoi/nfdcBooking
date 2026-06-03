@@ -4,7 +4,8 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import {
-  Plus, Pencil, ListChecks, Loader2, MoreHorizontal, GripVertical, History,
+  Plus, Pencil, ListChecks, Loader2, MoreHorizontal, GripVertical, History, AlertTriangle,
+  Globe, Building2,
 } from "lucide-react"
 import { toast } from "sonner"
 import {
@@ -45,7 +46,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import { Form, FormField, FormItem, FormControl, FormMessage } from "@/components/ui/form"
 import PageHeader from "@/components/common/PageHeader"
@@ -426,6 +427,12 @@ function ServiceRow({ svc, onEdit, onToggleStatus, onViewHistory }) {
               <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Mandatory</Badge>
             )}
             <StatusBadge status={svc.lifecycle?.status} />
+            {!isActive && (
+              <span className="flex items-center gap-1 text-[11px] text-amber-600 font-medium">
+                <AlertTriangle className="h-3 w-3 shrink-0" />
+                Set pricing to activate
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -720,16 +727,66 @@ export default function ServiceList() {
 
       {/* Scope selector + Add buttons */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <Select value={selectedScope} onValueChange={setSelectedScope}>
-          <SelectTrigger className="w-full sm:w-72"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="theater">Theater-wide</SelectItem>
-            {allAudis.map(a => {
-              const id = a.audiId ?? a.id ?? a._id
-              return <SelectItem key={id} value={id}>{a.name}</SelectItem>
-            })}
-          </SelectContent>
-        </Select>
+        <div className="space-y-1">
+          <Select value={selectedScope} onValueChange={setSelectedScope}>
+            <SelectTrigger className="w-full sm:w-80 m-3 py-6  ">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="w-80">
+              <SelectGroup>
+                <SelectLabel className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground ">
+                  Theater Scope
+                </SelectLabel>
+                <SelectItem value="theater">
+                  <div className="flex items-center gap-2.5 py-0.5">
+                    <div className="h-7 w-7 rounded-lg bg-nfdc-primary/10 flex items-center justify-center shrink-0">
+                      <Globe className="h-3.5 w-3.5 text-nfdc-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Theater-wide</p>
+                      <p className="text-[11px] text-muted-foreground">Available across all audis</p>
+                    </div>
+                  </div>
+                </SelectItem>
+              </SelectGroup>
+
+              {allAudis.length > 0 && (
+                <>
+                  <SelectSeparator className="my-1" />
+                  <SelectGroup>
+                    <SelectLabel className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Audi-specific
+                    </SelectLabel>
+                    {allAudis.map(a => {
+                      const id   = a.audiId ?? a.id ?? a._id
+                      const mode = a.config?.slotMode
+                      return (
+                        <SelectItem key={id} value={id}>
+                          <div className="flex items-center gap-2.5 py-0.5">
+                            <div className="h-7 w-7 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                              <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium">{a.name}</p>
+                              {mode && (
+                                <p className="text-[11px] text-muted-foreground capitalize">{mode} mode</p>
+                              )}
+                            </div>
+                          </div>
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectGroup>
+                </>
+              )}
+            </SelectContent>
+          </Select>
+          {selectedScope === "theater" && (
+            <p className="text-[11px] text-muted-foreground">
+              Select a specific audi to add or manage audi-specific services.
+            </p>
+          )}
+        </div>
 
         <div className="flex gap-2">
           <Button variant="outline" disabled={selectedScope === "theater"} onClick={() => setAddServiceCtx({ sectionId: null })}>

@@ -19,7 +19,7 @@ import { useAuth } from "@/hooks/useAuth"
 import { listBookings } from "@/api/bookings"
 import { listAdminAudis } from "@/api/audi"
 import { parseList } from "@/utils/parseList"
-import { formatDate } from "@/utils/formatDate"
+import { formatDate, fmt12 } from "@/utils/formatDate"
 import { formatINR } from "@/utils/formatCurrency"
 import { BOOKING_STATUS } from "@/utils/constants"
 import { cn } from "@/lib/utils"
@@ -112,7 +112,7 @@ export default function BookingList() {
       cell: ({ row }) => {
         const s = row.original.bookingDetails?.startTime
         const e = row.original.bookingDetails?.endTime
-        return s && e ? `${s}–${e}` : "—"
+        return s && e ? `${fmt12(s)} – ${fmt12(e)}` : "—"
       },
     },
     {

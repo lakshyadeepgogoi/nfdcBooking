@@ -67,7 +67,7 @@ export default function AppLayout({ requiredRole }) {
           </ErrorBoundary>
         </main>
       </div>
-      {isTheaterAdmin && <HelpGuide />}
+      <HelpGuide />
     </div>
   )
 }

@@ -24,7 +24,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Form, FormField, FormItem, FormControl, FormMessage } from "@/components/ui/form"
+import { Form, FormField } from "@/components/ui/form"
 import PageHeader from "@/components/common/PageHeader"
 import EmptyState from "@/components/common/EmptyState"
 import StatusBadge from "@/components/common/StatusBadge"
@@ -35,7 +35,7 @@ import { getAdminAudi } from "@/api/audi"
 import { getAudiCalendar } from "@/api/availability"
 import { listSlots } from "@/api/slots"
 import { parseList } from "@/utils/parseList"
-import { toAPIDate } from "@/utils/formatDate"
+import { toAPIDate, fmt12 } from "@/utils/formatDate"
 import { formatINR } from "@/utils/formatCurrency"
 import { cn } from "@/lib/utils"
 
@@ -48,7 +48,7 @@ function fmtDate(d) {
 
 function fmtRange(s, e) {
   if (!s && !e) return "—"
-  return `${s ?? "?"} – ${e ?? "?"}`
+  return `${s ? fmt12(s) : "?"} – ${e ? fmt12(e) : "?"}`
 }
 
 function getInitials(name) {
