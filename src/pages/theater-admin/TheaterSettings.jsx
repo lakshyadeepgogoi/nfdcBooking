@@ -5,7 +5,7 @@ import { z } from "zod"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Loader2, Plus, X, Upload, Image as ImageIcon,
-  Clock, User, ChevronDown, ChevronUp,
+  Clock, User, ChevronDown, ChevronUp, AlertTriangle,
   Settings2, Star, FileText, MapPin, Phone, Mail,
 } from "lucide-react"
 import { format } from "date-fns"
@@ -349,10 +349,10 @@ function ImagesTab({ theater, theaterId, onSaved }) {
 
 // ─── T&C history entry ────────────────────────────────────────────────────────
 
-function HistoryEntry({ entry }) {
+function HistoryEntry({ entry, isLive = false }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="border border-border rounded-lg overflow-hidden">
+    <div className={`border rounded-lg overflow-hidden ${isLive ? "border-emerald-500/50 bg-emerald-50/30 dark:bg-emerald-950/10" : "border-border"}`}>
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
@@ -360,6 +360,11 @@ function HistoryEntry({ entry }) {
       >
         <div className="flex items-center gap-3 min-w-0">
           <Badge variant="outline" className="shrink-0 font-mono">v{entry.version}</Badge>
+          {isLive && (
+            <Badge className="shrink-0 bg-emerald-500 hover:bg-emerald-500 text-white text-[10px] px-1.5 py-0">
+              Live
+            </Badge>
+          )}
           <div className="flex flex-col gap-0.5 min-w-0">
             {entry.publishedAt && (
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -396,8 +401,11 @@ function HistoryEntry({ entry }) {
 // ─── Tab: T&C ─────────────────────────────────────────────────────────────────
 
 function TnCTab({ theater, theaterId, onSaved }) {
-  const tnc     = theater?.details?.tnc ?? {}
-  const history = [...(tnc.history ?? [])].reverse()
+  const tnc        = theater?.details?.tnc ?? {}
+  const history    = [...(tnc.history ?? [])].reverse()
+  const isDraft    = tnc.status !== "published"
+  // When in draft, the most recent history entry is what users currently see
+  const liveEntry  = isDraft ? (history[0] ?? null) : null
 
   const [title,         setTitle]        = useState(tnc.title ?? "")
   const [body,          setBody]          = useState(tnc.body ?? "")
@@ -433,17 +441,62 @@ function TnCTab({ theater, theaterId, onSaved }) {
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
       {/* ── Editor ── */}
       <div className="xl:col-span-2 space-y-5">
-        {/* Status row */}
-        <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg bg-muted/30 border">
-          <Badge variant="outline" className="font-mono">v{tnc.version ?? 1}</Badge>
-          <Badge variant={tnc.status === "published" ? "default" : "secondary"} className="capitalize">
-            {tnc.status ?? "draft"}
-          </Badge>
-          {tnc.effectiveFrom && (
-            <span className="text-xs text-muted-foreground">
-              Effective: {format(new Date(tnc.effectiveFrom), "dd MMM yyyy")}
-            </span>
-          )}
+        {/* Status panel — always shows editing version + what users see */}
+        <div className="rounded-lg border overflow-hidden">
+          {/* Top row: what you're editing */}
+          <div className="flex flex-wrap items-center gap-2 px-4 py-3 bg-muted/30">
+            <span className="text-xs text-muted-foreground font-medium">Editing</span>
+            <Badge variant="outline" className="font-mono">v{tnc.version ?? 1}</Badge>
+            <Badge variant={isDraft ? "secondary" : "default"} className="capitalize">
+              {tnc.status ?? "draft"}
+            </Badge>
+            {tnc.effectiveFrom && (
+              <span className="text-xs text-muted-foreground">
+                · Effective {format(new Date(tnc.effectiveFrom), "dd MMM yyyy")}
+              </span>
+            )}
+          </div>
+
+          {/* Bottom row: what users see right now */}
+          <div className={`flex items-center gap-2 px-4 py-2.5 border-t text-sm ${
+            !isDraft
+              ? "bg-emerald-50 dark:bg-emerald-950/20"
+              : liveEntry
+                ? "bg-amber-50 dark:bg-amber-950/20"
+                : "bg-destructive/5"
+          }`}>
+            {!isDraft ? (
+              <>
+                <span className="inline-flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-medium text-xs">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block" />
+                  Live for users
+                </span>
+                <Badge variant="outline" className="font-mono border-emerald-500 text-emerald-700 dark:text-emerald-400">
+                  v{tnc.version ?? 1}
+                </Badge>
+              </>
+            ) : liveEntry ? (
+              <>
+                <span className="inline-flex items-center gap-1.5 text-amber-700 dark:text-amber-400 font-medium text-xs">
+                  <span className="h-2 w-2 rounded-full bg-amber-500 inline-block" />
+                  Live for users
+                </span>
+                <Badge variant="outline" className="font-mono border-amber-500 text-amber-700 dark:text-amber-400">
+                  v{liveEntry.version}
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  · publish v{tnc.version ?? 1} to update
+                </span>
+              </>
+            ) : (
+              <>
+                <AlertTriangle className="h-3.5 w-3.5 text-destructive shrink-0" />
+                <span className="text-xs text-destructive font-medium">
+                  No live version — users cannot complete bookings until you publish
+                </span>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Title */}
@@ -531,8 +584,12 @@ function TnCTab({ theater, theaterId, onSaved }) {
           </div>
         ) : (
           <div className="space-y-2">
-            {history.map((entry) => (
-              <HistoryEntry key={entry.version} entry={entry} />
+            {history.map((entry, idx) => (
+              <HistoryEntry
+                key={entry.version}
+                entry={entry}
+                isLive={isDraft && idx === 0}
+              />
             ))}
           </div>
         )}
@@ -542,8 +599,22 @@ function TnCTab({ theater, theaterId, onSaved }) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Publish T&amp;C?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will increment to v{(tnc.version ?? 1) + 1} and make it live immediately.
+            <AlertDialogDescription asChild>
+              <div className="space-y-1">
+                <p>
+                  This will publish <strong>v{tnc.version ?? 1}</strong> — the version number won&apos;t change, status becomes live.
+                </p>
+                {liveEntry && (
+                  <p className="text-xs text-muted-foreground">
+                    Users will switch from <strong>v{liveEntry.version}</strong> to <strong>v{tnc.version ?? 1}</strong>.
+                  </p>
+                )}
+                {!liveEntry && (
+                  <p className="text-xs text-muted-foreground">
+                    This is the first published version — users will be able to complete bookings.
+                  </p>
+                )}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
