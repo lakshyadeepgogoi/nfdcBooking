@@ -2,7 +2,7 @@ import { useEffect } from "react"
 import { Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { pick } from "@/utils/pick"
-import { DollarSign, CalendarCheck, FileText, TrendingUp, Clock, XCircle } from "lucide-react"
+import { IndianRupee, CalendarCheck, Timer, TrendingUp, Clock, XCircle } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
@@ -80,7 +80,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           title="Today's Revenue"
-          icon={DollarSign}
+          icon={IndianRupee}
           iconBg="bg-green-100"
           iconColor="text-green-600"
           value={formatINR(dash.totalRevenue ?? 0)}
@@ -96,7 +96,7 @@ export default function Dashboard() {
         />
         <KpiCard
           title="Pending Bookings"
-          icon={FileText}
+          icon={Timer}
           iconBg="bg-amber-100"
           iconColor="text-amber-600"
           value={dash.pendingBookings ?? 0}
@@ -129,7 +129,7 @@ export default function Dashboard() {
               <div className="space-y-4">
                 <div className="flex justify-between items-center py-2">
                   <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-green-50"><DollarSign className="h-4 w-4 text-green-600" /></div>
+                    <div className="p-1.5 rounded-lg bg-green-50"><IndianRupee className="h-4 w-4 text-green-600" /></div>
                     <span className="text-sm text-muted-foreground">Total Revenue</span>
                   </div>
                   <span className="font-semibold">{formatINR(rev.totalRevenue ?? 0)}</span>

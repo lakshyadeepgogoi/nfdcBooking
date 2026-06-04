@@ -6,8 +6,8 @@ import {
 } from "recharts"
 import { format } from "date-fns"
 import {
-  DollarSign, CalendarCheck, XCircle, Clock,
-  Building2, TrendingUp, RefreshCw, FileText, Download,
+  IndianRupee, CalendarCheck, XCircle, Clock,
+  Landmark, Briefcase, TrendingUp, Undo2, Timer, Download,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -208,13 +208,13 @@ export default function AnalyticsDashboard() {
 
         {/* KPI row */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
-          <KpiCard title="Total Revenue"    icon={DollarSign}    iconBg="bg-green-50"    iconColor="text-green-600"
+          <KpiCard title="Total Revenue"    icon={IndianRupee}   iconBg="bg-green-50"    iconColor="text-green-600"
             value={formatINR(dash.totalRevenue ?? 0)} isLoading={dashLoading} />
           <KpiCard title="Net Revenue"      icon={TrendingUp}    iconBg="bg-emerald-50"  iconColor="text-emerald-600"
             value={formatINR(dash.netRevenue ?? 0)}   isLoading={dashLoading} />
           <KpiCard title="Confirmed"        icon={CalendarCheck} iconBg="bg-blue-50"     iconColor="text-blue-600"
             value={dash.confirmedBookings ?? 0}        isLoading={dashLoading} />
-          <KpiCard title="Pending"          icon={FileText}      iconBg="bg-amber-50"    iconColor="text-amber-600"
+          <KpiCard title="Pending"          icon={Timer}         iconBg="bg-amber-50"    iconColor="text-amber-600"
             value={dash.pendingBookings ?? 0}          isLoading={dashLoading} />
           <KpiCard title="Cancelled"        icon={XCircle}       iconBg="bg-red-50"      iconColor="text-red-600"
             value={dash.cancelledBookings ?? 0}        isLoading={dashLoading} />
@@ -464,15 +464,15 @@ export default function AnalyticsDashboard() {
 
         {/* Revenue KPI row */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
-          <KpiCard title="Total Revenue"    icon={DollarSign}    iconBg="bg-green-50"   iconColor="text-green-600"
+          <KpiCard title="Total Revenue"    icon={IndianRupee}   iconBg="bg-green-50"   iconColor="text-green-600"
             value={formatINR(rev.totalRevenue ?? 0)}   isLoading={revLoading} />
           <KpiCard title="Net Revenue"      icon={TrendingUp}    iconBg="bg-emerald-50" iconColor="text-emerald-600"
             value={formatINR(rev.netRevenue ?? 0)}     isLoading={revLoading} />
-          <KpiCard title="Govt Revenue"     icon={Building2}     iconBg="bg-blue-50"    iconColor="text-blue-600"
+          <KpiCard title="Govt Revenue"     icon={Landmark}      iconBg="bg-blue-50"    iconColor="text-blue-600"
             value={formatINR(rev.govtRevenue ?? 0)}    isLoading={revLoading} />
-          <KpiCard title="Non-Govt Revenue" icon={Building2}     iconBg="bg-cyan-50"    iconColor="text-cyan-600"
+          <KpiCard title="Non-Govt Revenue" icon={Briefcase}     iconBg="bg-cyan-50"    iconColor="text-cyan-600"
             value={formatINR(rev.nonGovtRevenue ?? 0)} isLoading={revLoading} />
-          <KpiCard title="Refunds"          icon={RefreshCw}     iconBg="bg-red-50"     iconColor="text-red-600"
+          <KpiCard title="Refunds"          icon={Undo2}         iconBg="bg-red-50"     iconColor="text-red-600"
             value={formatINR(rev.refundAmount ?? 0)}   isLoading={revLoading} />
           <KpiCard title="Total Bookings"   icon={CalendarCheck} iconBg="bg-purple-50"  iconColor="text-purple-600"
             value={rev.totalBookings ?? 0}             isLoading={revLoading} />

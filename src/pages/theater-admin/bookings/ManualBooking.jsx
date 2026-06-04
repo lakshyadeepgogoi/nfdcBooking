@@ -6,7 +6,7 @@ import { z } from "zod"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   format, startOfMonth, endOfMonth, eachDayOfInterval, getDay,
-  isSameDay, isToday, addMonths, subMonths, isBefore, startOfDay,
+  isSameDay, isToday, addMonths, subMonths, isBefore, isAfter, startOfDay, addDays,
 } from "date-fns"
 import {
   ArrowLeft, Loader2, CheckCircle2, XCircle, Clock, Info,
@@ -171,14 +171,25 @@ function AvailabilityCalendar({ control, audiId }) {
     staleTime: 60_000,
   })
 
-  const calendar = calData?.calendar ?? {}
-  const slotMode = calData?.slotMode ?? null
+  const calendar            = calData?.calendar ?? {}
+  const slotMode            = calData?.slotMode ?? null
+  const minDays             = calData?.bookingWindow?.minDaysInAdvance ?? 0
+  const maxDays             = calData?.bookingWindow?.maxDaysInAdvance ?? 180
+  const paymentDeadlineHours = calData?.paymentDeadlineHours ?? 24
+
+  const todayStart   = startOfDay(new Date())
+  // Earliest and latest selectable dates based on audi booking window
+  const earliestDate = addDays(todayStart, minDays)
+  const latestDate   = addDays(todayStart, maxDays)
 
   const monthStart   = startOfMonth(currentMonth)
   const monthEnd     = endOfMonth(currentMonth)
   const days         = eachDayOfInterval({ start: monthStart, end: monthEnd })
   const startPadding = getDay(monthStart)
-  const todayStart   = startOfDay(new Date())
+
+  // Prevent navigating past the bookable range
+  const canGoPrev = !isBefore(endOfMonth(subMonths(currentMonth, 1)), earliestDate)
+  const canGoNext = !isAfter(startOfMonth(addMonths(currentMonth, 1)), latestDate)
 
   return (
     <FormField control={control} name="date" render={({ field, fieldState }) => {
@@ -188,8 +199,8 @@ function AvailabilityCalendar({ control, audiId }) {
       const selectedDayData = selectedDateStr ? calendar[selectedDateStr] : null
 
       const handleDayClick = (day) => {
-        if (isBefore(day, todayStart)) return
-        field.onChange(day)   // standard RHF update — no shouldValidate cascade
+        if (isBefore(day, earliestDate) || isAfter(day, latestDate)) return
+        field.onChange(day)
       }
 
       return (
@@ -213,11 +224,13 @@ function AvailabilityCalendar({ control, audiId }) {
               <CardHeader className="py-2 px-3 border-b">
                 <div className="flex items-center justify-between">
                   <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
+                    disabled={!canGoPrev}
                     onClick={() => setCurrentMonth(m => subMonths(m, 1))}>
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
                   <span className="font-semibold text-sm">{format(currentMonth, "MMMM yyyy")}</span>
                   <Button type="button" variant="ghost" size="icon" className="h-7 w-7"
+                    disabled={!canGoNext}
                     onClick={() => setCurrentMonth(m => addMonths(m, 1))}>
                     <ChevronRight className="h-4 w-4" />
                   </Button>
@@ -238,24 +251,33 @@ function AvailabilityCalendar({ control, audiId }) {
                 <div className="grid grid-cols-7 gap-0.5">
                   {Array.from({ length: startPadding }).map((_, i) => <div key={`p-${i}`} />)}
                   {days.map(day => {
-                    const dateStr     = toAPIDate(day)
-                    const dayData     = calendar[dateStr]
-                    const status      = dayData?.status
-                    const style       = STATUS[status]
-                    const isPast      = isBefore(day, todayStart)
-                    const isSelected  = selectedDate !== null && isSameDay(day, selectedDate)
-                    const isTodayCell = isToday(day)
+                    const dateStr      = toAPIDate(day)
+                    const dayData      = calendar[dateStr]
+                    const status       = dayData?.status
+                    const style        = STATUS[status]
+                    const tooEarly     = isBefore(day, earliestDate)
+                    const tooLate      = isAfter(day, latestDate)
+                    const isDisabled   = tooEarly || tooLate
+                    const isSelected   = selectedDate !== null && isSameDay(day, selectedDate)
+                    const isTodayCell  = isToday(day)
 
                     return (
                       <button
                         key={dateStr}
                         type="button"
-                        disabled={isPast}
+                        disabled={isDisabled}
                         onClick={() => handleDayClick(day)}
+                        title={
+                          tooEarly && minDays > 0
+                            ? `Bookings require at least ${minDays} day(s) in advance`
+                            : tooLate
+                              ? `Bookings cannot be made more than ${maxDays} days in advance`
+                              : undefined
+                        }
                         className={cn(
                           "relative h-9 w-full flex flex-col items-center justify-center rounded-md text-xs transition-colors",
-                          isPast     && "opacity-30 cursor-not-allowed",
-                          !isPast && !isSelected && (style?.cell ?? "hover:bg-muted/60 cursor-pointer"),
+                          isDisabled && "opacity-30 cursor-not-allowed",
+                          !isDisabled && !isSelected && (style?.cell ?? "hover:bg-muted/60 cursor-pointer"),
                           isSelected && "bg-nfdc-primary text-white shadow-sm font-semibold",
                           !isSelected && isTodayCell && "ring-2 ring-nfdc-accent font-semibold",
                         )}
@@ -278,6 +300,23 @@ function AvailabilityCalendar({ control, audiId }) {
                     </span>
                   ))}
                 </div>
+
+                {/* Booking window + payment deadline info */}
+                {calData && (
+                  <div className="mt-2.5 pt-2 border-t border-border flex flex-wrap gap-x-4 gap-y-0.5">
+                    {minDays > 0 && (
+                      <span className="text-[11px] text-muted-foreground">
+                        Min advance: <span className="font-medium text-foreground">{minDays} day{minDays > 1 ? "s" : ""}</span>
+                      </span>
+                    )}
+                    <span className="text-[11px] text-muted-foreground">
+                      Bookable up to: <span className="font-medium text-foreground">{maxDays} days ahead</span>
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      Pay within: <span className="font-medium text-foreground">{paymentDeadlineHours}h of booking</span>
+                    </span>
+                  </div>
+                )}
               </CardContent>
 
               {/* Selected day details */}
@@ -429,25 +468,31 @@ function TimeFields({ control, setValue, audi }) {
     staleTime: 60_000,
   })
 
+  const bufferTime  = audi?.config?.bufferTime ?? 0  // mins between bookings (flexible mode)
   const opStartMins = opStart ? toMins(opStart) : 0
   const opEndMins   = opEnd   ? toMins(opEnd)   : 24 * 60
 
-  // Booked windows for the selected date
+  // Booked windows — end time extended by bufferTime so the computed free windows
+  // match exactly what the backend availability checker enforces at booking time.
   const bookedWindows = useMemo(() => {
     const raw = calData?.calendar?.[dateStr]?.bookedWindows ?? []
     return raw
-      .map(w => ({ start: toMins(w.startTime), end: toMins(w.endTime) }))
+      .map(w => ({
+        start:       toMins(w.startTime),
+        end:         toMins(w.endTime),
+        endBuffered: toMins(w.endTime) + bufferTime,  // actual "occupied until" time
+      }))
       .sort((a, b) => a.start - b.start)
-  }, [calData, dateStr])
+  }, [calData, dateStr, bufferTime])
 
-  // Available free windows = gaps between booked windows within operational hours
+  // Available free windows — gap starts after each booking's buffered end
   const availableWindows = useMemo(() => {
     if (!dateStr) return opStart ? [{ start: opStartMins, end: opEndMins }] : []
     const windows = []
     let cursor = opStartMins
     for (const bw of bookedWindows) {
       if (cursor < bw.start) windows.push({ start: cursor, end: bw.start })
-      cursor = Math.max(cursor, bw.end)
+      cursor = Math.max(cursor, bw.endBuffered)  // skip past booking + buffer
     }
     if (cursor < opEndMins) windows.push({ start: cursor, end: opEndMins })
     return windows
@@ -463,12 +508,13 @@ function TimeFields({ control, setValue, audi }) {
     }
   }, [dateStr]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Returns true if startT + durationH hours fits entirely within a free window
+  // Returns true if the proposed slot fits without overlapping any booking or its buffer zone
   const isSlotFree = (startT, durationH) => {
     const sMin = toMins(startT)
     const eMin = sMin + durationH * 60
     if (eMin > opEndMins) return false
-    return !bookedWindows.some(bw => sMin < bw.end && eMin > bw.start)
+    // Check against buffered end so a duration chip that would land inside a buffer zone is flagged
+    return !bookedWindows.some(bw => sMin < bw.endBuffered && eMin > bw.start)
   }
 
   // ─── No audi ─────────────────────────────────────────────────────────────
@@ -1103,6 +1149,8 @@ function BookingForm({ schema, onSubmit, isPending, audiList, submitLabel }) {
                 )}
                 {cfg.paymentDeadlineHours && <span className="text-muted-foreground">Pay deadline <span className="font-medium text-foreground">{cfg.paymentDeadlineHours}h</span></span>}
                 {cfg.bufferTime > 0 && <span className="text-muted-foreground">Buffer <span className="font-medium text-foreground">{cfg.bufferTime} min</span></span>}
+                {cfg.bookingWindow?.minDaysInAdvance != null && <span className="text-muted-foreground">Min advance <span className="font-medium text-foreground">{cfg.bookingWindow.minDaysInAdvance} day{cfg.bookingWindow.minDaysInAdvance !== 1 ? "s" : ""}</span></span>}
+                {cfg.bookingWindow?.maxDaysInAdvance != null && <span className="text-muted-foreground">Max advance <span className="font-medium text-foreground">{cfg.bookingWindow.maxDaysInAdvance} days</span></span>}
                 {cfg.overtime?.allowed && <span className="text-muted-foreground">Overtime <span className="font-medium text-foreground">{cfg.overtime.rateMultiplier ?? 2}× rate</span></span>}
                 {isFixed && <span className="text-muted-foreground">Multi-slot <span className={`font-medium ${ms.allowed !== false ? "text-foreground" : "text-muted-foreground"}`}>{ms.allowed !== false ? "Allowed" : "Single only"}</span></span>}
                 {isFixed && ms.allowed !== false && ms.maxSlotsPerBooking && <span className="text-muted-foreground">Max slots <span className="font-medium text-foreground">{ms.maxSlotsPerBooking}</span></span>}
