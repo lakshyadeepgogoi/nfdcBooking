@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts"
-import { format } from "date-fns"
+import { format, isToday } from "date-fns"
+import { toast } from "sonner"
 import {
   IndianRupee, CalendarCheck, XCircle, Clock,
   Landmark, Briefcase, TrendingUp, Undo2, Timer, Download,
+  RefreshCw, Radio,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -17,7 +19,7 @@ import { Calendar } from "@/components/ui/calendar"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import PageHeader from "@/components/common/PageHeader"
-import { getAdminDashboard, getAudiAnalytics, getRevenueAnalytics } from "@/api/analytics"
+import { getAdminDashboard, getAudiAnalytics, getRevenueAnalytics, triggerAnalyticsSync } from "@/api/analytics"
 import { downloadCSV } from "@/utils/exportCsv"
 import { formatINR } from "@/utils/formatCurrency"
 import { toAPIDate, subDays } from "@/utils/formatDate"
@@ -146,19 +148,58 @@ export default function AnalyticsDashboard() {
   // ── Queries ─────────────────────────────────────────────────────────────────
   const dateStr = toAPIDate(selectedDate)
 
-  const { data: dashRaw, isLoading: dashLoading } = useQuery({
+  const queryClient  = useQueryClient()
+  const isLiveDate   = isToday(selectedDate)
+  const LIVE_INTERVAL = 5 * 60_000  // 5 minutes for today's data
+
+  const {
+    data: dashRaw, isLoading: dashLoading, isFetching: dashFetching,
+    dataUpdatedAt: dashUpdatedAt, refetch: refetchDash,
+  } = useQuery({
     queryKey: ["analytics", "dashboard", dateStr],
     queryFn: () => getAdminDashboard(dateStr).then(r => r.data.data),
     enabled: !!dateStr,
+    refetchInterval: isLiveDate ? LIVE_INTERVAL : false,
+    staleTime:       isLiveDate ? 2 * 60_000 : Infinity,
   })
   const dash = dashRaw?.stats ?? {}
 
-  const { data: audiRaw, isLoading: audiLoading } = useQuery({
+  const {
+    data: audiRaw, isLoading: audiLoading, isFetching: audiFetching,
+    dataUpdatedAt: audiUpdatedAt, refetch: refetchAudi,
+  } = useQuery({
     queryKey: ["analytics", "audi", dateStr],
     queryFn: () => getAudiAnalytics(dateStr).then(r => r.data.data),
     enabled: !!dateStr,
+    refetchInterval: isLiveDate ? LIVE_INTERVAL : false,
+    staleTime:       isLiveDate ? 2 * 60_000 : Infinity,
   })
   const audiList = Array.isArray(audiRaw) ? audiRaw : []
+
+  // Last refreshed = whichever of the two live queries was updated most recently
+  const liveLastUpdated = Math.max(dashUpdatedAt ?? 0, audiUpdatedAt ?? 0)
+
+  const handleLiveRefresh = () => {
+    refetchDash()
+    refetchAudi()
+  }
+
+  // ── Manual backend sync ──────────────────────────────────────────────────────
+  const syncMutation = useMutation({
+    mutationFn: () => triggerAnalyticsSync(dateStr),
+    onSuccess: () => {
+      toast.success(`Sync queued for ${dateStr} — data will update in a few seconds`)
+      // Re-fetch after a short delay to pick up the freshly synced data
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["analytics", "dashboard", dateStr] })
+        queryClient.invalidateQueries({ queryKey: ["analytics", "audi",      dateStr] })
+      }, 3000)
+    },
+    onError: (err) => toast.error(err?.response?.data?.message ?? "Sync failed"),
+  })
+
+  // syncedAt comes from the DB record (pre-computed) — null if it was a live fallback
+  const dbSyncedAt = dashRaw?.syncedAt ?? null
 
   const { data: revRaw, isLoading: revLoading } = useQuery({
     queryKey: ["analytics", "revenue", applied.period, toAPIDate(applied.from), toAPIDate(applied.to)],
@@ -167,6 +208,7 @@ export default function AnalyticsDashboard() {
       from: toAPIDate(applied.from),
       to: toAPIDate(applied.to),
     }).then(r => r.data.data),
+    staleTime: Infinity,  // Revenue analysis is always nightly — only refetch on explicit Apply
   })
   const rev = revRaw?.stats ?? {}
 
@@ -203,7 +245,59 @@ export default function AnalyticsDashboard() {
           title="Daily Overview"
           description={`Bookings and revenue for ${format(selectedDate, "dd MMM yyyy")}`}
         >
-          <DatePicker label="Select date" value={selectedDate} onChange={v => v && setSelectedDate(v)} />
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {/* Live / Nightly indicator */}
+            {isLiveDate ? (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-full">
+                <Radio className="h-3 w-3 animate-pulse" />
+                Live · refreshes every 5 min
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-muted px-2 py-1 rounded-full">
+                <Clock className="h-3 w-3" />
+                Nightly data
+              </span>
+            )}
+
+            {/* Last sync time — from DB record (syncedAt) or API fetch time */}
+            <div className="flex flex-col items-end gap-0.5">
+              {dbSyncedAt ? (
+                <span className="text-xs text-muted-foreground">
+                  Last synced: <span className="font-medium text-foreground">
+                    {format(new Date(dbSyncedAt), "dd MMM yyyy, HH:mm:ss")}
+                  </span>
+                </span>
+              ) : liveLastUpdated > 0 ? (
+                <span className="text-xs text-muted-foreground">
+                  Live query at {format(new Date(liveLastUpdated), "HH:mm:ss")}
+                </span>
+              ) : null}
+            </div>
+
+            {/* Sync Now — triggers backend aggregation + saves to DB */}
+            <Button
+              size="sm" variant="outline"
+              className="h-7 px-2 gap-1.5 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
+              disabled={syncMutation.isPending}
+              onClick={() => syncMutation.mutate()}
+              title="Re-compute and save analytics for this date to the database"
+            >
+              <RefreshCw className={`h-3 w-3 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+              Sync Now
+            </Button>
+
+            {/* Refresh — re-fetches from API (fast, uses cached DB data) */}
+            <Button
+              size="sm" variant="outline" className="h-7 px-2 gap-1.5 text-xs"
+              disabled={dashFetching || audiFetching}
+              onClick={handleLiveRefresh}
+            >
+              <RefreshCw className={`h-3 w-3 ${(dashFetching || audiFetching) ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+
+            <DatePicker label="Select date" value={selectedDate} onChange={v => v && setSelectedDate(v)} />
+          </div>
         </SectionHeading>
 
         {/* KPI row */}
@@ -313,7 +407,14 @@ export default function AnalyticsDashboard() {
         <SectionHeading
           title="Audi Performance"
           description={`Per-audi breakdown for ${format(selectedDate, "dd MMM yyyy")}`}
-        />
+        >
+          {!isLiveDate && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-muted px-2 py-1 rounded-full">
+              <Clock className="h-3 w-3" />
+              Nightly data
+            </span>
+          )}
+        </SectionHeading>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Confirmed bookings per audi */}
@@ -418,6 +519,11 @@ export default function AnalyticsDashboard() {
           title="Revenue Analysis"
           description="Aggregate metrics for a custom date range"
         >
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-muted px-2 py-1 rounded-full">
+              <Clock className="h-3 w-3" />
+              Nightly aggregated · apply date range to refresh
+            </span>
           <Button
             size="sm" variant="outline"
             disabled={revLoading || revenueBreakdown.length === 0}
@@ -437,6 +543,7 @@ export default function AnalyticsDashboard() {
             <Download className="mr-1.5 h-3.5 w-3.5" />
             Export CSV
           </Button>
+          </div>
         </SectionHeading>
 
         {/* Period + range controls */}

@@ -1,7 +1,8 @@
 import { useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import { useQuery } from "@tanstack/react-query"
-import { formatDistanceToNow } from "date-fns"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { formatDistanceToNow, format } from "date-fns"
+import { toast } from "sonner"
 import {
   DollarSign, CalendarCheck, TrendingUp, Clock, XCircle, FileText,
   ArrowRight, Building2, Users, BarChart2, RefreshCw,
@@ -16,7 +17,7 @@ import PageHeader from "@/components/common/PageHeader"
 import EmptyState from "@/components/common/EmptyState"
 import {
   getPlatformDashboard, getPlatformRevenue, listAllTheaters,
-  getActivityLogs, getCrossTheaterBookings,
+  getActivityLogs, getCrossTheaterBookings, triggerPlatformSync,
 } from "@/api/superAdmin"
 import { formatINR } from "@/utils/formatCurrency"
 import { toAPIDate, subDays, formatDateTime } from "@/utils/formatDate"
@@ -145,9 +146,27 @@ export default function PlatformDashboard() {
   const from30   = toAPIDate(subDays(today, 30))
 
   // ── Queries ─────────────────────────────────────────────────────────────────
-  const { data: dashRaw, isLoading: dashLoading } = useQuery({
+  const queryClient = useQueryClient()
+
+  const {
+    data: dashRaw, isLoading: dashLoading, isFetching: dashFetching,
+    dataUpdatedAt: dashUpdatedAt, refetch: refetchDash,
+  } = useQuery({
     queryKey: ["super", "dashboard", todayStr],
     queryFn: () => getPlatformDashboard(todayStr).then(r => r.data.data),
+    refetchInterval: 5 * 60_000,  // always today on this page
+    staleTime:       2 * 60_000,
+  })
+
+  const dbSyncedAt = dashRaw?.syncedAt ?? null
+
+  const syncMutation = useMutation({
+    mutationFn: () => triggerPlatformSync(todayStr),
+    onSuccess: () => {
+      toast.success("Platform sync queued — data will update shortly")
+      setTimeout(() => queryClient.invalidateQueries({ queryKey: ["super", "dashboard", todayStr] }), 3000)
+    },
+    onError: (err) => toast.error(err?.response?.data?.message ?? "Sync failed"),
   })
 
   const { data: revRaw, isLoading: revLoading } = useQuery({
@@ -187,7 +206,32 @@ export default function PlatformDashboard() {
 
   return (
     <div className="space-y-6 w-full">
-      <PageHeader title="Platform Dashboard" subtitle={`Today — ${formatDateTime(today)}`} />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <PageHeader title="Platform Dashboard" subtitle={`Today — ${formatDateTime(today)}`} />
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-full">
+            <Activity className="h-3 w-3 animate-pulse" /> Live · 5 min
+          </span>
+          {dbSyncedAt ? (
+            <span className="text-xs text-muted-foreground">
+              Last synced: <span className="font-medium text-foreground">{format(new Date(dbSyncedAt), "dd MMM yyyy, HH:mm:ss")}</span>
+            </span>
+          ) : dashUpdatedAt > 0 ? (
+            <span className="text-xs text-muted-foreground">Live at {format(new Date(dashUpdatedAt), "HH:mm:ss")}</span>
+          ) : null}
+          <Button size="sm" variant="outline"
+            className="h-7 px-2 gap-1.5 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
+            disabled={syncMutation.isPending} onClick={() => syncMutation.mutate()}>
+            <RefreshCw className={`h-3 w-3 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+            Sync Now
+          </Button>
+          <Button size="sm" variant="outline" className="h-7 px-2 gap-1.5 text-xs"
+            disabled={dashFetching} onClick={refetchDash}>
+            <RefreshCw className={`h-3 w-3 ${dashFetching ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
+      </div>
 
       {/* ── KPI Cards ──────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

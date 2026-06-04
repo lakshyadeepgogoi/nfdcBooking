@@ -1,13 +1,14 @@
 import { useEffect, useState, useMemo } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
 } from "recharts"
-import { format } from "date-fns"
+import { format, isToday } from "date-fns"
+import { toast } from "sonner"
 import {
   DollarSign, CalendarCheck, XCircle, Clock, TrendingUp, FileText,
-  RefreshCw, Building2, Download, LayoutDashboard, BarChart2, GitCompare, Layers,
+  RefreshCw, Building2, Download, LayoutDashboard, BarChart2, GitCompare, Layers, Radio,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -22,7 +23,7 @@ import PageHeader from "@/components/common/PageHeader"
 import { downloadCSV } from "@/utils/exportCsv"
 import {
   getPlatformDashboard, getPlatformRevenue, getTheaterComparison,
-  getSuperAudiAnalytics, listAllTheaters,
+  getSuperAudiAnalytics, listAllTheaters, triggerPlatformSync,
 } from "@/api/superAdmin"
 import { formatINR } from "@/utils/formatCurrency"
 import { toAPIDate, subDays } from "@/utils/formatDate"
@@ -182,13 +183,22 @@ export default function PlatformAnalytics() {
   const [audiTheater, setAudiTheater] = useState("")
 
   // ── Queries ─────────────────────────────────────────────────────────────────
-  const dashDateStr = toAPIDate(dashDate)
-  const audiDateStr = toAPIDate(audiDate)
+  const queryClient  = useQueryClient()
+  const dashDateStr  = toAPIDate(dashDate)
+  const audiDateStr  = toAPIDate(audiDate)
+  const isLiveDash   = isToday(dashDate)
+  const isLiveAudi   = isToday(audiDate)
+  const LIVE_INTERVAL = 5 * 60_000
 
-  const { data: dashRaw, isLoading: dashLoading } = useQuery({
+  const {
+    data: dashRaw, isLoading: dashLoading, isFetching: dashFetching,
+    dataUpdatedAt: dashUpdatedAt, refetch: refetchDash,
+  } = useQuery({
     queryKey: ["super", "dashboard", dashDateStr],
     queryFn: () => getPlatformDashboard(dashDateStr).then(r => r.data.data),
     enabled: !!dashDateStr,
+    refetchInterval: isLiveDash ? LIVE_INTERVAL : false,
+    staleTime:       isLiveDash ? 2 * 60_000 : Infinity,
   })
 
   const { data: revRaw, isLoading: revLoading } = useQuery({
@@ -198,20 +208,41 @@ export default function PlatformAnalytics() {
       start: toAPIDate(appliedRev.from),
       end: toAPIDate(appliedRev.to),
     }).then(r => r.data.data),
+    staleTime: Infinity,
   })
 
   const { data: compRaw, isLoading: compLoading } = useQuery({
     queryKey: ["super", "comparison"],
     queryFn: () => getTheaterComparison().then(r => r.data.data),
+    staleTime: Infinity,
   })
 
-  const { data: audiRaw, isLoading: audiLoading } = useQuery({
+  const {
+    data: audiRaw, isLoading: audiLoading, isFetching: audiFetching,
+    refetch: refetchAudi,
+  } = useQuery({
     queryKey: ["super", "audi", audiDateStr, audiTheater],
     queryFn: () => getSuperAudiAnalytics({
       date: audiDateStr,
       ...(audiTheater ? { theaterId: audiTheater } : {}),
     }).then(r => r.data.data),
     enabled: !!audiDateStr,
+    refetchInterval: isLiveAudi ? LIVE_INTERVAL : false,
+    staleTime:       isLiveAudi ? 2 * 60_000 : Infinity,
+  })
+
+  const dbSyncedAt = dashRaw?.syncedAt ?? null
+
+  const syncMutation = useMutation({
+    mutationFn: () => triggerPlatformSync(dashDateStr),
+    onSuccess: () => {
+      toast.success(`Platform sync queued for ${dashDateStr} — data will update shortly`)
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["super", "dashboard", dashDateStr] })
+        queryClient.invalidateQueries({ queryKey: ["super", "audi",      audiDateStr, audiTheater] })
+      }, 3000)
+    },
+    onError: (err) => toast.error(err?.response?.data?.message ?? "Sync failed"),
   })
 
   const { data: theatersRaw } = useQuery({
@@ -341,7 +372,38 @@ export default function PlatformAnalytics() {
                 title="Platform Overview"
                 description={`Platform-wide metrics for ${format(dashDate, "dd MMM yyyy")}`}
               >
-                <DatePicker label="Select date" value={dashDate} onChange={v => v && setDashDate(v)} />
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                  {isLiveDash ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-full">
+                      <Radio className="h-3 w-3 animate-pulse" /> Live · 5 min
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-muted px-2 py-1 rounded-full">
+                      <Clock className="h-3 w-3" /> Nightly data
+                    </span>
+                  )}
+                  {dbSyncedAt ? (
+                    <span className="text-xs text-muted-foreground">
+                      Last synced: <span className="font-medium text-foreground">{format(new Date(dbSyncedAt), "dd MMM yyyy, HH:mm:ss")}</span>
+                    </span>
+                  ) : dashUpdatedAt > 0 ? (
+                    <span className="text-xs text-muted-foreground">Live query at {format(new Date(dashUpdatedAt), "HH:mm:ss")}</span>
+                  ) : null}
+                  <Button size="sm" variant="outline"
+                    className="h-7 px-2 gap-1.5 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
+                    disabled={syncMutation.isPending}
+                    onClick={() => syncMutation.mutate()}
+                    title="Re-compute and save analytics for this date">
+                    <RefreshCw className={`h-3 w-3 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+                    Sync Now
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 px-2 gap-1.5 text-xs"
+                    disabled={dashFetching} onClick={refetchDash}>
+                    <RefreshCw className={`h-3 w-3 ${dashFetching ? "animate-spin" : ""}`} />
+                    Refresh
+                  </Button>
+                  <DatePicker label="Select date" value={dashDate} onChange={v => v && setDashDate(v)} />
+                </div>
               </SectionHeading>
 
               {/* Platform KPI cards */}

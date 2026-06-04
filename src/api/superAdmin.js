@@ -12,6 +12,9 @@ export const getTheaterComparison = () =>
 export const getSuperAudiAnalytics = (params) =>
   api.get("/super/analytics/audis", { params })
 
+export const triggerPlatformSync = (date) =>
+  api.post("/super/analytics/sync", { date })
+
 export const listAllTheaters = (params) =>
   api.get("/super/theaters", { params })
 
