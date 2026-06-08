@@ -5,6 +5,7 @@ import PlatformDashboard from "@/pages/super-admin/PlatformDashboard"
 import TheaterList from "@/pages/super-admin/theaters/TheaterList"
 import TheaterDetail from "@/pages/super-admin/theaters/TheaterDetail"
 import AdminList from "@/pages/super-admin/admins/AdminList"
+import UserList from "@/pages/super-admin/users/UserList"
 import CrossTheaterBookings from "@/pages/super-admin/bookings/CrossTheaterBookings"
 import BookingDetail from "@/pages/theater-admin/bookings/BookingDetail"
 import PlatformAnalytics from "@/pages/super-admin/analytics/PlatformAnalytics"
@@ -20,6 +21,7 @@ export default function SuperAdminRoutes() {
         <Route path="theaters" element={<TheaterList />} />
         <Route path="theaters/:theaterId" element={<TheaterDetail />} />
         <Route path="admins" element={<AdminList />} />
+        <Route path="users" element={<UserList />} />
         <Route path="bookings" element={<CrossTheaterBookings />} />
         <Route path="bookings/:bookingId" element={<BookingDetail />} />
         <Route path="analytics" element={<PlatformAnalytics />} />

@@ -70,6 +70,12 @@ export const deactivateAdmin = (id) =>
 export const reassignAdmin = (id, theaterId) =>
   api.patch(`/super/admins/${id}`, { theaterId })
 
+export const listUsers = (params) =>
+  api.get("/users", { params })
+
+export const updateUserStatus = (id, status, note) =>
+  api.patch(`/users/${id}/status`, { status, ...(note ? { note } : {}) })
+
 export const getCrossTheaterBookings = (params) =>
   api.get("/super/bookings", { params })
 

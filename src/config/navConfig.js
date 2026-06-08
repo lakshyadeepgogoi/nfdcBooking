@@ -25,6 +25,7 @@ import {
   BarChart3,
   Bell,
   Users,
+  UserRound,
   ScrollText,
 } from "lucide-react"
 import { ROLES } from "@/auth/permissions"
@@ -116,6 +117,12 @@ export const NAV_ITEMS = [
     label: "Admin Management",
     path:  "/super/admins",
     icon:  Users,
+    roles: [ROLES.SUPER_ADMIN],
+  },
+  {
+    label: "Users",
+    path:  "/super/users",
+    icon:  UserRound,
     roles: [ROLES.SUPER_ADMIN],
   },
   {
