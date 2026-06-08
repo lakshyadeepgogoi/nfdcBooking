@@ -14,3 +14,9 @@ export const updateProfile = (data) =>
 
 export const changePassword = (data) =>
   api.post("/admin/auth/change-password", data)
+
+export const forgotPassword = (email) =>
+  api.post("/admin/auth/forgot-password", { email })
+
+export const resetPassword = (token, password) =>
+  api.post("/admin/auth/reset-password", { token, password })

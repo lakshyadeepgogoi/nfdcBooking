@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useNavigate, Navigate } from "react-router-dom"
+import { useNavigate, Navigate, Link } from "react-router-dom"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -72,12 +72,22 @@ export default function AdminLogin() {
                 type="email"
                 placeholder="admin@nfdc.gov.in"
               />
-              <FormInput
-                control={form.control}
-                name="password"
-                label="Password"
-                type="password"
-              />
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">Password</label>
+                  <Link
+                    to="/forgot-password"
+                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
+                <FormInput
+                  control={form.control}
+                  name="password"
+                  type="password"
+                />
+              </div>
 
               {error && <p className="text-sm text-red-600">{error}</p>}
 

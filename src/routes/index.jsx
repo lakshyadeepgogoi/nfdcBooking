@@ -1,5 +1,7 @@
 import { Routes, Route, Navigate } from "react-router-dom"
 import AdminLogin from "@/pages/auth/AdminLogin"
+import ForgotPassword from "@/pages/auth/ForgotPassword"
+import ResetPassword from "@/pages/auth/ResetPassword"
 import NotFound from "@/pages/NotFound"
 import TheaterAdminRoutes from "./TheaterAdminRoutes"
 import SuperAdminRoutes from "./SuperAdminRoutes"
@@ -20,7 +22,9 @@ export default function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<RootRedirect />} />
-      <Route path="/login" element={<AdminLogin />} />
+      <Route path="/login"           element={<AdminLogin />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password"  element={<ResetPassword />} />
       <Route path="/admin/*" element={<TheaterAdminRoutes />} />
       <Route path="/super/*" element={<SuperAdminRoutes />} />
       <Route path="*" element={<NotFound />} />

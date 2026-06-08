@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts"
-import { ArrowLeft, Users, Plus, X, Loader2, Image as ImageIcon, Upload, Trash2, Clock, ChevronDown, ChevronUp, History, User, Download } from "lucide-react"
+import { ArrowLeft, Users, Plus, X, Loader2, Image as ImageIcon, Upload, Trash2, Clock, ChevronDown, ChevronUp, History, User, Download, Settings2, Star, FileText, MapPin, Phone, Mail, Shield } from "lucide-react"
 import { format } from "date-fns"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -734,51 +734,83 @@ export default function TheaterDetail() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <PageHeader
-          title={theater?.name ?? "Theater Detail"}
-          action={{ label: "Back", icon: ArrowLeft, onClick: () => navigate("/super/theaters") }}
-        />
-        {/* <div className="flex items-center gap-3 shrink-0">
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <PageHeader
+            title={theater?.name ?? "Theater Detail"}
+            action={{ label: "Back", icon: ArrowLeft, onClick: () => navigate("/super/theaters") }}
+          />
           <StatusBadge status={theater?.lifecycle?.status} />
-          <Button
-            size="sm"
-            variant={isActive ? "destructive" : "default"}
-            disabled={statusMutation.isPending}
-            onClick={() => statusMutation.mutate(isActive ? "inactive" : "active")}
-          >
-            {statusMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isActive ? "Deactivate" : "Activate"}
-          </Button>
-        </div> */}
+        </div>
+
+        {/* Quick info chips */}
+        {theater && (
+          <div className="flex flex-wrap gap-3">
+            {[theater.details?.city, theater.details?.state].filter(Boolean).length > 0 && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground border rounded-lg px-3 py-1.5 bg-background shadow-sm">
+                <MapPin className="h-3.5 w-3.5 shrink-0" />
+                {[theater.details?.city, theater.details?.state].filter(Boolean).join(", ")}
+              </div>
+            )}
+            {theater.details?.phone && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground border rounded-lg px-3 py-1.5 bg-background shadow-sm">
+                <Phone className="h-3.5 w-3.5 shrink-0" />
+                {theater.details.phone}
+              </div>
+            )}
+            {theater.details?.email && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground border rounded-lg px-3 py-1.5 bg-background shadow-sm">
+                <Mail className="h-3.5 w-3.5 shrink-0" />
+                {theater.details.email}
+              </div>
+            )}
+            {theater.paymentConfig?.mid && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground border rounded-lg px-3 py-1.5 bg-background shadow-sm">
+                <Shield className="h-3.5 w-3.5 shrink-0 text-green-500" />
+                Payment configured
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Vertical tabs */}
-      <Tabs defaultValue="info" orientation="vertical" className="flex flex-col sm:flex-row gap-0">
-        <TabsList className="flex sm:flex-col h-auto w-full sm:w-44 shrink-0 bg-muted/50 border rounded-lg sm:rounded-r-none p-1 justify-start">
-          <TabsTrigger value="info"       className="w-full justify-start text-left data-[state=active]:shadow-sm">Info</TabsTrigger>
-          <TabsTrigger value="facilities" className="w-full justify-start text-left data-[state=active]:shadow-sm">Facilities</TabsTrigger>
-          <TabsTrigger value="images"     className="w-full justify-start text-left data-[state=active]:shadow-sm">Images</TabsTrigger>
-          <TabsTrigger value="tnc"        className="w-full justify-start text-left data-[state=active]:shadow-sm">T&amp;C</TabsTrigger>
-          <TabsTrigger value="config"     className="w-full justify-start text-left data-[state=active]:shadow-sm">Config</TabsTrigger>
-        </TabsList>
+      {/* Horizontal tabs */}
+      <Tabs defaultValue="info" className="flex flex-col">
+        <div className="border-b border-border overflow-x-auto">
+          <TabsList className="flex h-auto gap-0 rounded-none bg-transparent p-0">
+            {[
+              { value: "info",       label: "Info",        Icon: Settings2  },
+              { value: "facilities", label: "Facilities",  Icon: Star       },
+              { value: "images",     label: "Images",      Icon: ImageIcon  },
+              { value: "tnc",        label: "T&C",         Icon: FileText   },
+              { value: "config",     label: "Config",      Icon: Shield     },
+            ].map(({ value, label, Icon }) => (
+              <TabsTrigger
+                key={value}
+                value={value}
+                className="flex items-center gap-2 rounded-none border-b-2 border-transparent -mb-px bg-transparent px-5 pb-3 pt-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:border-nfdc-primary data-[state=active]:bg-transparent data-[state=active]:text-nfdc-primary data-[state=active]:shadow-none"
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                {label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
-        <div className="flex-1 border rounded-lg sm:rounded-l-none sm:border-l-0 bg-background">
-          <TabsContent value="info" className="m-0 p-6">
+        <div className="mt-6">
+          <TabsContent value="info" className="mt-0">
             <InfoTab theater={theater} theaterId={theaterId} onSaved={onSaved} />
           </TabsContent>
-          <TabsContent value="facilities" className="m-0 p-6">
+          <TabsContent value="facilities" className="mt-0">
             <FacilitiesTab theater={theater} theaterId={theaterId} onSaved={onSaved} />
           </TabsContent>
-          <TabsContent value="images" className="m-0 p-6">
-            <h3 className="text-base font-semibold mb-4">Theater Images</h3>
+          <TabsContent value="images" className="mt-0">
             <ImagesTab theater={theater} theaterId={theaterId} onSaved={onSaved} />
           </TabsContent>
-          <TabsContent value="tnc" className="m-0 p-6">
-            <h3 className="text-base font-semibold mb-4">Terms &amp; Conditions</h3>
+          <TabsContent value="tnc" className="mt-0">
             <TnCTab theater={theater} theaterId={theaterId} onSaved={onSaved} />
           </TabsContent>
-          <TabsContent value="config" className="m-0 p-6">
+          <TabsContent value="config" className="mt-0">
             <ConfigTab theater={theater} theaterId={theaterId} onSaved={onSaved} />
           </TabsContent>
         </div>
@@ -889,31 +921,86 @@ export default function TheaterDetail() {
         )}
       </div>
 
-      {/* Status History */}
+      {/* Status History + Actions */}
       {theater?.lifecycle?.statusHistory?.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
-              <History className="h-4 w-4" /> Status History
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {[...theater.lifecycle.statusHistory].reverse().map((h, i) => (
-                <div key={i} className="flex items-start gap-3 text-sm">
-                  <StatusDot status={h.status} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium capitalize">{h.status}</span>
-                      {h.note && <span className="text-muted-foreground text-xs">— {h.note}</span>}
-                    </div>
-                    <p className="text-xs text-muted-foreground">{formatDateTime(h.timestamp)}</p>
-                  </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+
+          {/* Timeline */}
+          <div className="md:col-span-2">
+            <Card>
+              <CardHeader className="pb-3 border-b">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <History className="h-4 w-4 text-muted-foreground" /> Status History
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <div className="relative pl-4 space-y-5">
+                  {/* Vertical connecting line */}
+                  <div className="absolute left-[7px] top-2 bottom-2 w-px bg-border" />
+                  {[...theater.lifecycle.statusHistory].reverse().map((h, i) => {
+                    const dotColor = {
+                      active:   "bg-green-500 border-green-200",
+                      inactive: "bg-red-500 border-red-200",
+                      pending:  "bg-yellow-500 border-yellow-200",
+                    }[h.status] ?? "bg-muted-foreground border-border"
+                    return (
+                      <div key={i} className="relative flex items-start gap-4">
+                        <span className={cn(
+                          "relative z-10 mt-0.5 h-3.5 w-3.5 rounded-full border-2 border-background shrink-0",
+                          dotColor
+                        )} />
+                        <div className="flex-1 min-w-0 -mt-0.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusBadge status={h.status} />
+                            {h.note && (
+                              <span className="text-xs text-muted-foreground italic">"{h.note}"</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">{formatDateTime(h.timestamp)}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Theater actions sidebar */}
+          <div className="space-y-4">
+            <Card>
+              <CardHeader className="pb-3 border-b">
+                <CardTitle className="text-sm font-semibold">Theater Status</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Current status</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {isActive ? "Theater is live and accepting bookings" : "Theater is offline — not visible to customers"}
+                    </p>
+                  </div>
+                  <StatusBadge status={theater?.lifecycle?.status} />
+                </div>
+                <Button
+                  className="w-full"
+                  variant={isActive ? "destructive" : "default"}
+                  disabled={statusMutation.isPending}
+                  onClick={() => statusMutation.mutate(isActive ? "inactive" : "active")}
+                >
+                  {statusMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {isActive ? "Deactivate Theater" : "Activate Theater"}
+                </Button>
+                {isActive && (
+                  <p className="text-[11px] text-muted-foreground text-center">
+                    Deactivating will hide the theater from all booking flows.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+        </div>
       )}
     </div>
   )
